@@ -1,13 +1,13 @@
 {
-  "name": "Ledger — Spaced Repetition",
+  "name": "Ledger — Study",
   "short_name": "Ledger",
-  "description": "Leitner-system flashcards for business, economics, and entrepreneurship.",
+  "description": "Spaced-repetition decks: a guided business and economics curriculum plus any subject you feed it.",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait-primary",
-  "background_color": "#0a0e14",
-  "theme_color": "#0a0e14",
+  "background_color": "#fbfbf6",
+  "theme_color": "#fbfbf6",
   "categories": ["education", "productivity"],
   "icons": [
     { "src": "icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },

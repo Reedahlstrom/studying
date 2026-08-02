@@ -1,14 +1,14 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="dark">
+<html lang="en" data-theme="light">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
-<title>Ledger — Spaced Repetition</title>
-<meta name="description" content="Leitner-system flashcards for business, economics, and entrepreneurship." />
-<meta name="theme-color" content="#0b0f16" />
+<title>Ledger — Study</title>
+<meta name="description" content="Spaced-repetition decks: a guided business & economics curriculum plus any subject you feed it." />
+<meta name="theme-color" content="#fbfbf7" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="mobile-web-app-capable" content="yes" />
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-status-bar-style" content="default" />
 <meta name="apple-mobile-web-app-title" content="Ledger" />
 <link rel="manifest" href="manifest.webmanifest" />
 <link rel="icon" href="icons/icon.svg" type="image/svg+xml" />
@@ -17,52 +17,81 @@
 </head>
 <body>
 
-<div class="aurora" aria-hidden="true"><span></span><span></span><span></span></div>
+<div class="wash" aria-hidden="true"><span></span><span></span></div>
 
 <header class="topbar">
-  <div class="brand">
-    <svg class="mark" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="14" height="12" rx="3"/><rect x="7" y="3" width="14" height="12" rx="3" class="mark-b"/></svg>
-    <span>Ledger</span>
-  </div>
+  <button class="brand" id="brandBtn" aria-label="All decks">
+    <svg class="mark" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21V9"/><path d="M12 12c0-3 2.4-5.5 6-6 0 3.6-2.2 6-6 6z"/><path d="M12 16c0-2.4-1.9-4.4-4.8-4.8 0 2.9 1.8 4.8 4.8 4.8z"/></svg>
+    <span class="brand-text">Ledger</span>
+  </button>
+  <button class="deck-pill" id="deckPill" hidden>
+    <span class="deck-dot" id="deckPillDot"></span>
+    <span id="deckPillName">Deck</span>
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 9l4-4 4 4M16 15l-4 4-4-4"/></svg>
+  </button>
   <nav class="tabs desktop-tabs" id="desktopTabs" aria-label="Primary"></nav>
-  <button class="icon-btn" id="themeToggle" aria-label="Toggle theme" title="Toggle theme">
-    <svg viewBox="0 0 24 24" class="ico-sun" aria-hidden="true"><circle cx="12" cy="12" r="4.2"/><g class="rays"><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M19.1 4.9L17 7M7 17l-2.1 2.1"/></g></svg>
+  <button class="icon-btn" id="settingsBtn" aria-label="Settings">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3.2"/><path d="M19.2 13.6a1.5 1.5 0 0 0 .3 1.6l.1.1a1.8 1.8 0 1 1-2.5 2.5l-.1-.1a1.5 1.5 0 0 0-2.5 1v.3a1.8 1.8 0 1 1-3.6 0v-.2a1.5 1.5 0 0 0-2.6-1l-.1.1a1.8 1.8 0 1 1-2.5-2.5l.1-.1a1.5 1.5 0 0 0-1-2.5H4.5a1.8 1.8 0 1 1 0-3.6h.2a1.5 1.5 0 0 0 1-2.6l-.1-.1A1.8 1.8 0 1 1 8.1 4.4l.1.1a1.5 1.5 0 0 0 1.6.3h.1a1.5 1.5 0 0 0 .9-1.4V3a1.8 1.8 0 1 1 3.6 0v.2a1.5 1.5 0 0 0 2.5 1l.1-.1a1.8 1.8 0 1 1 2.5 2.5l-.1.1a1.5 1.5 0 0 0 1 2.5h.3a1.8 1.8 0 1 1 0 3.6H21a1.5 1.5 0 0 0-1.4.9z"/></svg>
+  </button>
+  <button class="icon-btn" id="themeToggle" aria-label="Toggle theme">
+    <svg viewBox="0 0 24 24" class="ico-sun" aria-hidden="true"><circle cx="12" cy="12" r="4.2"/><g><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M19.1 4.9L17 7M7 17l-2.1 2.1"/></g></svg>
     <svg viewBox="0 0 24 24" class="ico-moon" aria-hidden="true"><path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5z"/></svg>
   </button>
 </header>
 
 <main id="app">
 
-  <!-- ───────────────── HOME ───────────────── -->
-  <section class="view" id="view-home" data-view="home">
+  <!-- ───────────────── DECKS (home) ───────────────── -->
+  <section class="view" id="view-decks" data-view="decks">
     <div class="hero">
       <p class="eyebrow" id="greeting">Welcome back</p>
       <h1 class="due-count"><span id="dueBig">0</span><small id="dueWord">cards due</small></h1>
-      <p class="sub" id="heroSub">Your queue is built from the Leitner boxes.</p>
-      <button class="btn primary big" id="startBtn">
-        <span>Start session</span>
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h13M13 6l6 6-6 6"/></svg>
-      </button>
+      <p class="sub" id="heroSub">across all your decks</p>
+    </div>
+    <div class="deck-grid" id="deckGrid"></div>
+  </section>
+
+  <!-- ───────────────── DECK HOME ───────────────── -->
+  <section class="view" id="view-deck" data-view="deck">
+    <div class="deck-hero" id="deckHero">
+      <p class="eyebrow" id="deckKindLabel">Deck</p>
+      <h1 id="deckTitle">Deck</h1>
+      <p class="sub" id="deckSub">—</p>
+      <button class="btn primary big" id="deckStart"><span>Start session</span>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h13M13 6l6 6-6 6"/></svg></button>
     </div>
 
     <div class="stat-row">
-      <div class="stat"><span class="stat-num" id="statTotal">0</span><span class="stat-label">Total cards</span></div>
+      <div class="stat"><span class="stat-num" id="statTotal">0</span><span class="stat-label">Cards</span></div>
       <div class="stat"><span class="stat-num" id="statMastered">0</span><span class="stat-label">Mastered</span></div>
       <div class="stat"><span class="stat-num" id="statStreak">0</span><span class="stat-label">Day streak</span></div>
     </div>
 
+    <div class="quick-row">
+      <button class="quick" data-go="path"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21V9"/><path d="M12 12c0-3 2.4-5.5 6-6 0 3.6-2.2 6-6 6z"/><path d="M12 16c0-2.4-1.9-4.4-4.8-4.8 0 2.9 1.8 4.8 4.8 4.8z"/></svg><span id="quickPathLabel">The path</span></button>
+      <button class="quick" data-go="add"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><span>Add cards</span></button>
+      <button class="quick" data-go="browse"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h11"/></svg><span>Browse</span></button>
+    </div>
+
     <div class="panel">
-      <div class="panel-head">
-        <h2>Box breakdown</h2>
-        <span class="hint">correct → promotes · missed → Box 1</span>
-      </div>
+      <div class="panel-head"><h2>Box breakdown</h2><span class="hint">right → next box · wrong → Box 1</span></div>
       <div class="boxes" id="boxes"></div>
     </div>
 
     <div class="panel">
-      <div class="panel-head"><h2>By category</h2></div>
+      <div class="panel-head"><h2 id="topicHead">By topic</h2></div>
       <div class="catlist" id="catList"></div>
     </div>
+  </section>
+
+  <!-- ───────────────── PATH ───────────────── -->
+  <section class="view" id="view-path" data-view="path">
+    <div class="view-head">
+      <h1 id="pathTitle">The path</h1>
+      <span class="count-pill" id="pathProgress">0%</span>
+    </div>
+    <p class="lede" id="pathLede">Each idea sits on the ones before it. Tap any node to study just that piece.</p>
+    <div class="tree" id="tree"></div>
   </section>
 
   <!-- ───────────────── STUDY ───────────────── -->
@@ -80,29 +109,23 @@
 
     <div class="stage" id="stage">
       <div class="card-slot" id="cardSlot">
-      <div class="flashcard" id="flashcard" tabindex="0" role="button" aria-label="Reveal answer">
-        <div class="face front">
-          <span class="cat-chip" id="cardCat">Category</span>
-          <p class="face-text" id="cardFront">—</p>
-          <span class="tap-hint">tap to reveal</span>
+        <div class="flashcard" id="flashcard" tabindex="0" role="button" aria-label="Reveal answer">
+          <div class="face front">
+            <span class="cat-chip" id="cardCat">Topic</span>
+            <p class="face-text" id="cardFront">—</p>
+            <span class="tap-hint">tap to reveal</span>
+          </div>
+          <div class="face back">
+            <span class="cat-chip subtle">Answer</span>
+            <p class="face-text" id="cardBack">—</p>
+          </div>
         </div>
-        <div class="face back">
-          <span class="cat-chip subtle">Answer</span>
-          <p class="face-text" id="cardBack">—</p>
-        </div>
-      </div>
       </div>
     </div>
 
     <div class="answer-row" id="answerRow">
-      <button class="btn miss" id="missBtn">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
-        <span>Missed it</span>
-      </button>
-      <button class="btn got" id="gotBtn">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12.5l5 5L20 6.5"/></svg>
-        <span>Got it</span>
-      </button>
+      <button class="btn miss" id="missBtn"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg><span>Missed it</span></button>
+      <button class="btn got" id="gotBtn"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12.5l5 5L20 6.5"/></svg><span>Got it</span></button>
     </div>
 
     <div class="session-done" id="sessionDone" hidden>
@@ -110,7 +133,7 @@
       <h2>Session complete</h2>
       <p id="doneSummary">—</p>
       <div class="done-actions">
-        <button class="btn ghost" id="doneHome">Back home</button>
+        <button class="btn ghost" id="doneHome">Back to deck</button>
         <button class="btn primary" id="doneAgain">Study more</button>
       </div>
     </div>
@@ -119,67 +142,104 @@
   <!-- ───────────────── ADD ───────────────── -->
   <section class="view" id="view-add" data-view="add">
     <div class="view-head">
-      <h1>Add cards</h1>
-      <div class="seg" id="addModeSeg" role="tablist">
-        <button class="seg-btn on" data-mode="one" role="tab">One at a time</button>
-        <button class="seg-btn" data-mode="bulk" role="tab">Bulk paste</button>
-        <span class="seg-thumb" id="segThumb"></span>
-      </div>
+      <h1>Add to <span id="addDeckName">deck</span></h1>
+    </div>
+    <div class="seg wide" id="addModeSeg" role="tablist">
+      <button class="seg-btn on" data-mode="one" role="tab">One by one</button>
+      <button class="seg-btn" data-mode="paste" role="tab">Paste list</button>
+      <button class="seg-btn" data-mode="notes" role="tab">From notes</button>
+      <button class="seg-btn" data-mode="gen" role="tab">Generate</button>
+      <span class="seg-thumb" id="segThumb"></span>
     </div>
 
+    <!-- one by one -->
     <form class="panel form" id="addForm">
-      <label class="field">
-        <span>Front <em>question / term</em></span>
-        <textarea id="fFront" rows="2" placeholder="What does opportunity cost measure?" required></textarea>
-      </label>
-      <label class="field">
-        <span>Back <em>answer</em></span>
-        <textarea id="fBack" rows="3" placeholder="The value of the next-best alternative given up." required></textarea>
-      </label>
-      <label class="field">
-        <span>Category</span>
-        <div class="select-wrap"><select id="fCat"></select><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></div>
-      </label>
+      <label class="field"><span>Front <em>question or term</em></span>
+        <textarea id="fFront" rows="2" placeholder="What is opportunity cost?" required></textarea></label>
+      <label class="field"><span>Back <em>answer</em></span>
+        <textarea id="fBack" rows="3" placeholder="What you gave up to get it." required></textarea></label>
+      <label class="field"><span>Topic <em>optional</em></span>
+        <input id="fCat" list="topicList" placeholder="e.g. Chapter 3" /></label>
+      <datalist id="topicList"></datalist>
       <div class="form-actions">
         <span class="added-count" id="addedCount"></span>
         <button class="btn primary" type="submit">Add card <kbd>⌘↵</kbd></button>
       </div>
     </form>
 
-    <form class="panel form" id="bulkForm" hidden>
-      <label class="field">
-        <span>Paste lines <em>front | back | category</em></span>
-        <textarea id="fBulk" rows="10" placeholder="What is marginal thinking? | Deciding based on the next unit's added cost vs added benefit. | Market Foundations
-Inflation | A sustained rise in the general price level. | Macro &amp; the Economy"></textarea>
-      </label>
-      <p class="hint">Category is optional — leave it off and the fallback below is used. Blank lines and <code>#</code> comments are skipped.</p>
-      <label class="field">
-        <span>Fallback category</span>
-        <div class="select-wrap"><select id="fBulkCat"></select><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></div>
-      </label>
-      <div class="form-actions">
-        <span class="added-count" id="bulkCount"></span>
-        <button class="btn primary" type="submit">Import cards</button>
+    <!-- paste list -->
+    <form class="panel form" id="pasteForm" hidden>
+      <label class="field"><span>Paste your list</span>
+        <textarea id="fPaste" rows="9" placeholder="One card per line. Any of these work:
+
+opportunity cost | what you gave up
+opportunity cost - what you gave up
+opportunity cost: what you gave up
+opportunity cost&#9;what you gave up"></textarea></label>
+      <div class="row tight">
+        <label class="check"><input type="checkbox" id="pasteReverse" /><span>Also make reverse cards <em>(good for languages)</em></span></label>
       </div>
+      <label class="field"><span>Topic for these <em>optional</em></span>
+        <input id="fPasteCat" list="topicList" placeholder="e.g. Unit 2 vocab" /></label>
+      <div class="form-actions">
+        <span class="added-count" id="pasteCount"></span>
+        <button class="btn ghost" type="button" id="pastePreview">Preview</button>
+        <button class="btn primary" type="submit">Import</button>
+      </div>
+    </form>
+
+    <!-- from notes (AI) -->
+    <form class="panel form" id="notesForm" hidden>
+      <label class="field"><span>Paste notes, a chapter, a syllabus, anything</span>
+        <textarea id="fNotes" rows="10" placeholder="Paste raw lecture notes or a reading. Claude pulls out the testable ideas and writes cards you review before they're added."></textarea></label>
+      <div class="row tight">
+        <label class="field inline"><span>How many cards</span>
+          <div class="select-wrap small"><select id="fNotesCount"><option>10</option><option selected>15</option><option>20</option><option>30</option></select><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></div></label>
+        <label class="field inline grow"><span>Topic <em>optional</em></span>
+          <input id="fNotesCat" list="topicList" placeholder="e.g. Lecture 4" /></label>
+      </div>
+      <div class="form-actions">
+        <span class="added-count" id="notesCount"></span>
+        <button class="btn primary" type="submit" id="notesBtn">Make cards</button>
+      </div>
+      <p class="hint keyless" hidden>Needs a Claude API key — add one in Settings.</p>
+    </form>
+
+    <!-- generate -->
+    <form class="panel form" id="genForm" hidden>
+      <p class="lede tight" id="genLede">Build more cards from what's already in this deck.</p>
+      <label class="field" id="genScopeField"><span>Focus on</span>
+        <div class="select-wrap"><select id="fGenScope"></select><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></div></label>
+      <div class="row tight">
+        <label class="field inline"><span>How many</span>
+          <div class="select-wrap small"><select id="fGenCount"><option>5</option><option selected>10</option><option>15</option></select><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></div></label>
+        <div class="field inline grow"><span>Engine</span>
+          <div class="seg small" id="genEngineSeg">
+            <button class="seg-btn on" type="button" data-engine="local">Offline</button>
+            <button class="seg-btn" type="button" data-engine="ai">Claude</button>
+            <span class="seg-thumb" id="genThumb"></span>
+          </div>
+        </div>
+      </div>
+      <div class="form-actions">
+        <span class="added-count" id="genCount"></span>
+        <button class="btn primary" type="submit" id="genBtn">Generate</button>
+      </div>
+      <p class="hint" id="genHint">Offline mode remixes your existing cards into new angles — reversals, fill-in-the-blanks, and questions that connect two ideas. No key needed.</p>
     </form>
   </section>
 
   <!-- ───────────────── BROWSE ───────────────── -->
   <section class="view" id="view-browse" data-view="browse">
-    <div class="view-head">
-      <h1>Cards</h1>
-      <span class="count-pill" id="browseCount">0</span>
-    </div>
-
+    <div class="view-head"><h1>Cards</h1><span class="count-pill" id="browseCount">0</span></div>
     <div class="filters">
       <div class="search">
         <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
-        <input id="search" type="search" placeholder="Search cards…" autocomplete="off" />
+        <input id="search" type="search" placeholder="Search this deck…" autocomplete="off" />
       </div>
       <div class="chip-row" id="catFilter"></div>
       <div class="chip-row" id="boxFilter"></div>
     </div>
-
     <div class="card-list" id="cardList"></div>
     <p class="empty" id="browseEmpty" hidden>Nothing here yet.</p>
   </section>
@@ -198,8 +258,25 @@ Inflation | A sustained rise in the general price level. | Macro &amp; the Econo
         </div>
       </div>
       <div class="row">
-        <div><strong>Missed cards return this session</strong><p class="hint">Re-queue a missed card at the end of the queue.</p></div>
+        <div><strong>Missed cards come back</strong><p class="hint">Re-queue a missed card at the end of the same session.</p></div>
         <button class="switch" id="requeueSwitch" role="switch" aria-checked="false"><span></span></button>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head"><h2>Claude API key</h2></div>
+      <p class="hint">Powers "From notes" and Claude-generated cards. Stored only in this browser, on this device — never sent anywhere but Anthropic, never in the code.</p>
+      <div class="key-row">
+        <input type="password" id="apiKey" placeholder="sk-ant-…" autocomplete="off" spellcheck="false" />
+        <button class="icon-btn" id="keyPeek" aria-label="Show key" type="button">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z"/><circle cx="12" cy="12" r="2.6"/></svg>
+        </button>
+      </div>
+      <div class="row wrap">
+        <button class="btn primary" id="keySave">Save key</button>
+        <button class="btn ghost" id="keyTest">Test it</button>
+        <button class="btn danger-ghost" id="keyClear">Remove</button>
+        <span class="key-state" id="keyState"></span>
       </div>
     </div>
 
@@ -222,24 +299,22 @@ Inflation | A sustained rise in the general price level. | Macro &amp; the Econo
         <input type="file" id="importFile" accept="application/json" hidden />
         <button class="btn danger-ghost" id="resetBtn">Reset everything</button>
       </div>
-      <p class="hint">Everything lives in this browser only — no account, no server. Export before clearing site data.</p>
+      <p class="hint">Everything lives in this browser. No account, no server. Export before clearing site data.</p>
     </div>
-
-    <p class="version">Ledger · Leitner spaced repetition · v1</p>
+    <p class="version">Ledger · Leitner spaced repetition</p>
   </section>
-
 </main>
 
 <nav class="tabbar" id="mobileTabs" aria-label="Primary"></nav>
-
 <div class="toast-wrap" id="toasts" aria-live="polite"></div>
 
+<!-- ───── card edit sheet ───── -->
 <div class="modal-scrim" id="scrim" hidden>
   <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
     <h3 id="modalTitle">Edit card</h3>
     <label class="field"><span>Front</span><textarea id="eFront" rows="2"></textarea></label>
     <label class="field"><span>Back</span><textarea id="eBack" rows="3"></textarea></label>
-    <label class="field"><span>Category</span><div class="select-wrap"><select id="eCat"></select><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></div></label>
+    <label class="field"><span>Topic</span><input id="eCat" list="topicList" /></label>
     <label class="field"><span>Box</span><div class="select-wrap"><select id="eBox"></select><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></div></label>
     <div class="modal-actions">
       <button class="btn danger-ghost" id="eDelete">Delete</button>
@@ -249,6 +324,56 @@ Inflation | A sustained rise in the general price level. | Macro &amp; the Econo
     </div>
   </div>
 </div>
+
+<!-- ───── deck sheet ───── -->
+<div class="modal-scrim" id="deckScrim" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="deckModalTitle">
+    <h3 id="deckModalTitle">New deck</h3>
+    <label class="field"><span>Name</span><input id="dName" placeholder="BIOL 210, Spanish, Chess openings…" /></label>
+    <div class="field"><span>Colour</span><div class="swatches" id="dSwatches"></div></div>
+    <div class="modal-actions">
+      <button class="btn danger-ghost" id="dDelete" hidden>Delete deck</button>
+      <span class="spacer"></span>
+      <button class="btn ghost" id="dCancel">Cancel</button>
+      <button class="btn primary" id="dSave">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- ───── principle sheet ───── -->
+<div class="modal-scrim" id="nodeScrim" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="nodeTitle">
+    <span class="cat-chip" id="nodePhase">Phase</span>
+    <h3 id="nodeTitle">Principle</h3>
+    <p class="node-idea" id="nodeIdea">—</p>
+    <div class="node-meta" id="nodeMeta"></div>
+    <div class="node-bar"><i id="nodeBar"></i></div>
+    <p class="hint" id="nodeStats">—</p>
+    <div class="modal-actions">
+      <button class="btn ghost" id="nodeGenerate">Generate more</button>
+      <span class="spacer"></span>
+      <button class="btn ghost" id="nodeClose">Close</button>
+      <button class="btn primary" id="nodeStudy">Study these</button>
+    </div>
+  </div>
+</div>
+
+<!-- ───── review queue ───── -->
+<div class="modal-scrim" id="reviewScrim" hidden>
+  <div class="modal tall" role="dialog" aria-modal="true" aria-labelledby="reviewTitle">
+    <h3 id="reviewTitle">Review new cards</h3>
+    <p class="hint" id="reviewHint">Keep what's good. Nothing is added until you say so.</p>
+    <div class="review-list" id="reviewList"></div>
+    <div class="modal-actions">
+      <button class="btn ghost" id="reviewNone">Discard all</button>
+      <span class="spacer"></span>
+      <span class="key-state" id="reviewCount"></span>
+      <button class="btn primary" id="reviewAdd">Add kept</button>
+    </div>
+  </div>
+</div>
+
+<div class="busy" id="busy" hidden><div class="spinner"></div><p id="busyText">Thinking…</p></div>
 
 <script src="app.js" type="module"></script>
 </body>

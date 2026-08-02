@@ -1,10 +1,11 @@
 /* Ledger service worker — offline-first app shell. */
-const VERSION = 'ledger-v1';
+const VERSION = 'ledger-v2';
 const ASSETS = [
   './',
   './index.html',
   './styles.css',
   './app.js',
+  './curriculum.js',
   './manifest.webmanifest',
   './icons/icon.svg',
   './icons/icon-192.png',
