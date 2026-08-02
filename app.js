@@ -9,7 +9,7 @@ const LEGACY_KEY = 'ledger.v1';
 const BOX_COUNT = 5;
 const INTERVALS = { 1: 0, 2: 2, 3: 4, 4: 8, 5: 16 };
 const CURRICULUM_DECK = 'deck-business';
-const SEED_VERSION = 2;
+const SEED_VERSION = 3;   // bump whenever curriculum.js gains cards, or installs never see them
 
 const DECK_COLORS = ['#6d8340', '#3f7d78', '#8a5a9e', '#b06a35', '#3f6ba8', '#a8496a', '#7a7f45', '#4a7f4f'];
 
