@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
+<title>Ledger — Spaced Repetition</title>
+<meta name="description" content="Leitner-system flashcards for business, economics, and entrepreneurship." />
+<meta name="theme-color" content="#0b0f16" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Ledger" />
+<link rel="manifest" href="manifest.webmanifest" />
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml" />
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+<div class="aurora" aria-hidden="true"><span></span><span></span><span></span></div>
+
+<header class="topbar">
+  <div class="brand">
+    <svg class="mark" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="14" height="12" rx="3"/><rect x="7" y="3" width="14" height="12" rx="3" class="mark-b"/></svg>
+    <span>Ledger</span>
+  </div>
+  <nav class="tabs desktop-tabs" id="desktopTabs" aria-label="Primary"></nav>
+  <button class="icon-btn" id="themeToggle" aria-label="Toggle theme" title="Toggle theme">
+    <svg viewBox="0 0 24 24" class="ico-sun" aria-hidden="true"><circle cx="12" cy="12" r="4.2"/><g class="rays"><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M19.1 4.9L17 7M7 17l-2.1 2.1"/></g></svg>
+    <svg viewBox="0 0 24 24" class="ico-moon" aria-hidden="true"><path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5z"/></svg>
+  </button>
+</header>
+
+<main id="app">
+
+  <!-- ───────────────── HOME ───────────────── -->
+  <section class="view" id="view-home" data-view="home">
+    <div class="hero">
+      <p class="eyebrow" id="greeting">Welcome back</p>
+      <h1 class="due-count"><span id="dueBig">0</span><small id="dueWord">cards due</small></h1>
+      <p class="sub" id="heroSub">Your queue is built from the Leitner boxes.</p>
+      <button class="btn primary big" id="startBtn">
+        <span>Start session</span>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h13M13 6l6 6-6 6"/></svg>
+      </button>
+    </div>
+
+    <div class="stat-row">
+      <div class="stat"><span class="stat-num" id="statTotal">0</span><span class="stat-label">Total cards</span></div>
+      <div class="stat"><span class="stat-num" id="statMastered">0</span><span class="stat-label">Mastered</span></div>
+      <div class="stat"><span class="stat-num" id="statStreak">0</span><span class="stat-label">Day streak</span></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <h2>Box breakdown</h2>
+        <span class="hint">correct → promotes · missed → Box 1</span>
+      </div>
+      <div class="boxes" id="boxes"></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head"><h2>By category</h2></div>
+      <div class="catlist" id="catList"></div>
+    </div>
+  </section>
+
+  <!-- ───────────────── STUDY ───────────────── -->
+  <section class="view" id="view-study" data-view="study">
+    <div class="session-bar">
+      <button class="icon-btn ghost" id="endSession" aria-label="End session">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+      <div class="progress">
+        <div class="progress-track"><div class="progress-fill" id="progressFill"></div></div>
+        <span class="progress-text" id="progressText">0 / 0</span>
+      </div>
+      <span class="box-chip" id="cardBox">Box 1</span>
+    </div>
+
+    <div class="stage" id="stage">
+      <div class="card-slot" id="cardSlot">
+      <div class="flashcard" id="flashcard" tabindex="0" role="button" aria-label="Reveal answer">
+        <div class="face front">
+          <span class="cat-chip" id="cardCat">Category</span>
+          <p class="face-text" id="cardFront">—</p>
+          <span class="tap-hint">tap to reveal</span>
+        </div>
+        <div class="face back">
+          <span class="cat-chip subtle">Answer</span>
+          <p class="face-text" id="cardBack">—</p>
+        </div>
+      </div>
+      </div>
+    </div>
+
+    <div class="answer-row" id="answerRow">
+      <button class="btn miss" id="missBtn">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+        <span>Missed it</span>
+      </button>
+      <button class="btn got" id="gotBtn">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12.5l5 5L20 6.5"/></svg>
+        <span>Got it</span>
+      </button>
+    </div>
+
+    <div class="session-done" id="sessionDone" hidden>
+      <div class="done-ring"><svg viewBox="0 0 120 120" aria-hidden="true"><circle cx="60" cy="60" r="52"/><circle cx="60" cy="60" r="52" class="ring-fg" id="doneRing"/></svg><span id="donePct">0%</span></div>
+      <h2>Session complete</h2>
+      <p id="doneSummary">—</p>
+      <div class="done-actions">
+        <button class="btn ghost" id="doneHome">Back home</button>
+        <button class="btn primary" id="doneAgain">Study more</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ───────────────── ADD ───────────────── -->
+  <section class="view" id="view-add" data-view="add">
+    <div class="view-head">
+      <h1>Add cards</h1>
+      <div class="seg" id="addModeSeg" role="tablist">
+        <button class="seg-btn on" data-mode="one" role="tab">One at a time</button>
+        <button class="seg-btn" data-mode="bulk" role="tab">Bulk paste</button>
+        <span class="seg-thumb" id="segThumb"></span>
+      </div>
+    </div>
+
+    <form class="panel form" id="addForm">
+      <label class="field">
+        <span>Front <em>question / term</em></span>
+        <textarea id="fFront" rows="2" placeholder="What does opportunity cost measure?" required></textarea>
+      </label>
+      <label class="field">
+        <span>Back <em>answer</em></span>
+        <textarea id="fBack" rows="3" placeholder="The value of the next-best alternative given up." required></textarea>
+      </label>
+      <label class="field">
+        <span>Category</span>
+        <div class="select-wrap"><select id="fCat"></select><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></div>
+      </label>
+      <div class="form-actions">
+        <span class="added-count" id="addedCount"></span>
+        <button class="btn primary" type="submit">Add card <kbd>⌘↵</kbd></button>
+      </div>
+    </form>
+
+    <form class="panel form" id="bulkForm" hidden>
+      <label class="field">
+        <span>Paste lines <em>front | back | category</em></span>
+        <textarea id="fBulk" rows="10" placeholder="What is marginal thinking? | Deciding based on the next unit's added cost vs added benefit. | Market Foundations
+Inflation | A sustained rise in the general price level. | Macro &amp; the Economy"></textarea>
+      </label>
+      <p class="hint">Category is optional — leave it off and the fallback below is used. Blank lines and <code>#</code> comments are skipped.</p>
+      <label class="field">
+        <span>Fallback category</span>
+        <div class="select-wrap"><select id="fBulkCat"></select><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></div>
+      </label>
+      <div class="form-actions">
+        <span class="added-count" id="bulkCount"></span>
+        <button class="btn primary" type="submit">Import cards</button>
+      </div>
+    </form>
+  </section>
+
+  <!-- ───────────────── BROWSE ───────────────── -->
+  <section class="view" id="view-browse" data-view="browse">
+    <div class="view-head">
+      <h1>Cards</h1>
+      <span class="count-pill" id="browseCount">0</span>
+    </div>
+
+    <div class="filters">
+      <div class="search">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+        <input id="search" type="search" placeholder="Search cards…" autocomplete="off" />
+      </div>
+      <div class="chip-row" id="catFilter"></div>
+      <div class="chip-row" id="boxFilter"></div>
+    </div>
+
+    <div class="card-list" id="cardList"></div>
+    <p class="empty" id="browseEmpty" hidden>Nothing here yet.</p>
+  </section>
+
+  <!-- ───────────────── SETTINGS ───────────────── -->
+  <section class="view" id="view-more" data-view="more">
+    <div class="view-head"><h1>Settings</h1></div>
+
+    <div class="panel">
+      <div class="row">
+        <div><strong>Cards per session</strong><p class="hint">Your nightly target.</p></div>
+        <div class="stepper">
+          <button class="icon-btn" id="targetDown" aria-label="Fewer">−</button>
+          <span id="targetVal">15</span>
+          <button class="icon-btn" id="targetUp" aria-label="More">+</button>
+        </div>
+      </div>
+      <div class="row">
+        <div><strong>Missed cards return this session</strong><p class="hint">Re-queue a missed card at the end of the queue.</p></div>
+        <button class="switch" id="requeueSwitch" role="switch" aria-checked="false"><span></span></button>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head"><h2>Schedule</h2></div>
+      <ul class="schedule">
+        <li><b>Box 1</b><span>every session</span></li>
+        <li><b>Box 2</b><span>every 2 days</span></li>
+        <li><b>Box 3</b><span>every 4 days</span></li>
+        <li><b>Box 4</b><span>every 8 days</span></li>
+        <li><b>Box 5</b><span>every 16 days → mastered</span></li>
+      </ul>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head"><h2>Your data</h2></div>
+      <div class="row wrap">
+        <button class="btn ghost" id="exportBtn">Export JSON</button>
+        <button class="btn ghost" id="importBtn">Import JSON</button>
+        <input type="file" id="importFile" accept="application/json" hidden />
+        <button class="btn danger-ghost" id="resetBtn">Reset everything</button>
+      </div>
+      <p class="hint">Everything lives in this browser only — no account, no server. Export before clearing site data.</p>
+    </div>
+
+    <p class="version">Ledger · Leitner spaced repetition · v1</p>
+  </section>
+
+</main>
+
+<nav class="tabbar" id="mobileTabs" aria-label="Primary"></nav>
+
+<div class="toast-wrap" id="toasts" aria-live="polite"></div>
+
+<div class="modal-scrim" id="scrim" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+    <h3 id="modalTitle">Edit card</h3>
+    <label class="field"><span>Front</span><textarea id="eFront" rows="2"></textarea></label>
+    <label class="field"><span>Back</span><textarea id="eBack" rows="3"></textarea></label>
+    <label class="field"><span>Category</span><div class="select-wrap"><select id="eCat"></select><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></div></label>
+    <label class="field"><span>Box</span><div class="select-wrap"><select id="eBox"></select><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></div></label>
+    <div class="modal-actions">
+      <button class="btn danger-ghost" id="eDelete">Delete</button>
+      <span class="spacer"></span>
+      <button class="btn ghost" id="eCancel">Cancel</button>
+      <button class="btn primary" id="eSave">Save</button>
+    </div>
+  </div>
+</div>
+
+<script src="app.js" type="module"></script>
+</body>
+</html>
