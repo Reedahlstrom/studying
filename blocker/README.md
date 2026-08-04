@@ -29,8 +29,20 @@ Pin it to the toolbar to see progress at a glance.
 
 ## Blocked by default
 
-`youtube.com` · `instagram.com` · `tiktok.com` · `reddit.com` · `netflix.com` · `twitch.tv`
-· `x.com` · `twitter.com` · `facebook.com` · `hulu.com` · `disneyplus.com` · `primevideo.com`
+**Video** `youtube.com` · `netflix.com` · `twitch.tv` · `hulu.com` · `disneyplus.com` · `primevideo.com`
+
+**Social** `instagram.com` · `tiktok.com` · `reddit.com`
+
+**Meta** `facebook.com` · `fb.com` · `fb.watch` · `messenger.com`
+
+**X** `x.com` · `twitter.com` · `t.co`
+
+Subdomains come free — `facebook.com` also catches `m.facebook.com`. Separate domains do
+not, which is why `fb.com`, `messenger.com`, and `t.co` are listed individually: `t.co` is
+how most X links actually open, so leaving it out leaves the side door open.
+
+Edit the list from the popup → **Edit blocked sites**. If you have customised it, the
+**Add missing defaults** button merges in anything new without discarding your own entries.
 
 Edit the list from the extension's popup → **Edit blocked sites**. Subdomains are covered
 automatically, so `youtube.com` also catches `m.youtube.com`.

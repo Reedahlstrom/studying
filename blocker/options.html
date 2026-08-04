@@ -13,11 +13,11 @@ textarea{width:100%;height:230px;margin-top:14px;padding:13px;border-radius:12px
 textarea:focus{outline:none;border-color:#6d8340;box-shadow:0 0 0 4px #6d834024}
 button{margin-top:14px;padding:12px 22px;border:none;border-radius:13px;cursor:pointer;font-size:15px;font-weight:620;
  color:#fff;background:linear-gradient(168deg,#6d8340,#4e6229)}
-#saved{margin-left:12px;color:#6d8340;font-weight:600;font-size:14px;opacity:0;transition:opacity .3s}
+button.ghost{background:none;border:1px solid #e2e6d5;color:#6c7462;margin-left:8px}@media(prefers-color-scheme:dark){button.ghost{border-color:#363d29;color:#99a488}}#saved{margin-left:12px;color:#6d8340;font-weight:600;font-size:14px;opacity:0;transition:opacity .3s}
 #saved.on{opacity:1}
 </style></head><body>
 <h1>Blocked sites</h1>
 <p>One domain per line. Subdomains are covered automatically, so <code>youtube.com</code> also blocks <code>m.youtube.com</code>.</p>
 <textarea id="sites" spellcheck="false"></textarea>
-<div><button id="save">Save</button><span id="saved">Saved</span></div>
-<script src="options.js"></script></body></html>
+<div><button id="save">Save</button><button id="restore" class="ghost">Add missing defaults</button><span id="saved">Saved</span></div>
+<script type="module" src="options.js"></script></body></html>

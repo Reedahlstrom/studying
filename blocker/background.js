@@ -10,13 +10,9 @@
    accidental skeleton key.
    ══════════════════════════════════════════════════════════════ */
 
-const APP_URL = 'https://reedahlstrom.github.io/studying/';
+import { DEFAULT_SITES } from './defaults.js';
 
-const DEFAULT_SITES = [
-  'youtube.com', 'instagram.com', 'tiktok.com', 'reddit.com',
-  'netflix.com', 'twitch.tv', 'x.com', 'twitter.com',
-  'facebook.com', 'hulu.com', 'disneyplus.com', 'primevideo.com',
-];
+const APP_URL = 'https://reedahlstrom.github.io/studying/';
 
 const today = () => {
   const d = new Date();

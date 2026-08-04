@@ -3,20 +3,46 @@
   "name": "Learn Things Good — Gate",
   "version": "1.0.0",
   "description": "Keeps entertainment sites shut until tonight's flashcards are done.",
-  "permissions": ["declarativeNetRequest", "storage", "alarms"],
-  "host_permissions": ["<all_urls>"],
-  "background": { "service_worker": "background.js" },
+  "permissions": [
+    "declarativeNetRequest",
+    "storage",
+    "alarms"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
   "content_scripts": [
     {
-      "matches": ["https://reedahlstrom.github.io/studying/*"],
-      "js": ["content.js"],
+      "matches": [
+        "https://reedahlstrom.github.io/studying/*"
+      ],
+      "js": [
+        "content.js"
+      ],
       "run_at": "document_idle"
     }
   ],
   "web_accessible_resources": [
-    { "resources": ["blocked.html", "blocked.js"], "matches": ["<all_urls>"] }
+    {
+      "resources": [
+        "blocked.html",
+        "blocked.js"
+      ],
+      "matches": [
+        "<all_urls>"
+      ]
+    }
   ],
-  "action": { "default_popup": "popup.html", "default_title": "Learn Things Good — Gate" },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Learn Things Good — Gate"
+  },
   "options_page": "options.html",
-  "icons": { "128": "icon-128.png" }
+  "icons": {
+    "128": "icon-128.png"
+  }
 }
