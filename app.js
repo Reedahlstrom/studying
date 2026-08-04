@@ -193,6 +193,7 @@ function addPassage(deck, title, text, ambitionId) {
       intro: null, source: 'passage',
     }));
   });
+  introduceChunks(deck);   // today's lines are available immediately, not after a navigation
   save();
   return passage;
 }
@@ -202,18 +203,28 @@ function introduceChunks(deck) {
   const today = dayKey();
   let budget = 0;
   for (const p of passagesIn(deck.id)) budget = Math.max(budget, (AMBITION[p.ambition] || AMBITION.normal).wordsPerDay);
-  const already = state.cards.filter((c) => c.passageId && c.deckId === deck.id && c.intro === today);
-  let spent = already.reduce((n, c) => n + wordsIn(c.front), 0);
   for (const p of passagesIn(deck.id)) {
     const perDay = (AMBITION[p.ambition] || AMBITION.normal).wordsPerDay;
-    for (const c of chunksOf(p.id)) {
+    const lines = chunksOf(p.id);
+    /* each passage gets its own budget, so a second passage is not starved by the first */
+    let spent = lines.filter((c) => c.intro === today).reduce((t, c) => t + wordsIn(c.front), 0);
+    for (const c of lines) {
       if (c.intro) continue;
-      if (spent >= perDay) break;
+      const cost = wordsIn(c.front);
+      /* stop before overshooting the promised pace — but always release one line,
+         otherwise a passage whose first line exceeds the budget never starts */
+      if (spent > 0 && spent + cost > perDay) break;
       c.intro = today;
-      spent += wordsIn(c.front);
+      spent += cost;
     }
   }
   save();
+}
+
+/* Release today's lines for every text deck. Idempotent, so it is safe to call
+   from anywhere that is about to count what is due. */
+function releaseDailyLines() {
+  for (const d of state.decks) if (isText(d)) introduceChunks(d);
 }
 
 /* Grading a chunk: advance the ritual, then hand it to the Leitner boxes. */
@@ -306,6 +317,7 @@ function openDeck(id) { state.activeDeck = id; save(); go('deck'); }
 /* ───────────────────────── decks view ───────────────────────── */
 function renderDecks() {
   const today = dayKey();
+  releaseDailyLines();
   const dueAll = state.cards.filter((c) => isDue(c, today));
   const reviewedToday = todayCount(), nightlyTarget = state.settings.target;
   /* only tonight's slice — the full backlog is discouraging and not actionable */
@@ -365,6 +377,7 @@ function greetingText() {
 function renderDeck() {
   const deck = activeDeck(); if (!deck) return;
   const today = dayKey();
+  if (isText(deck)) introduceChunks(deck);
   const cards = deckCards(deck.id);
   const due = cards.filter((c) => isDue(c, today));
   const mastered = cards.filter((c) => c.mastered);
@@ -390,7 +403,8 @@ function renderDeck() {
     btn.disabled = cards.every((c) => c.mastered);
   } else {
     const tonight = Math.max(1, Math.min(due.length, target - todayCount()));
-    $('#deckSub').textContent = `${tonight} card${tonight === 1 ? '' : 's'} due today.`;
+    const unit = isText(deck) ? 'line' : 'card';
+    $('#deckSub').textContent = `${tonight} ${unit}${tonight === 1 ? '' : 's'} due today.`;
     btn.querySelector('span').textContent = 'Start session';
     btn.dataset.action = 'study'; btn.disabled = false;
   }
@@ -425,7 +439,9 @@ function renderDeck() {
 }
 
 function upcoming(cards) {
-  const keys = cards.filter((c) => !c.mastered).map(nextDueKey).filter(Boolean).sort();
+  const live = cards.filter((c) => !c.mastered && (!c.passageId || c.intro));
+  const keys = live.map(nextDueKey).filter(Boolean).sort();
+  if (!keys.length && cards.some((c) => c.passageId && !c.intro)) return 'tomorrow';   // more lines release then
   if (!keys.length) return null;
   const diff = daysBetween(dayKey(), keys[0]);
   return diff <= 0 ? 'today' : diff === 1 ? 'tomorrow' : `in ${diff} days`;
@@ -544,7 +560,7 @@ function startSession(filter = null, studyAhead = false) {
   if (filter && filter.type === 'principle') pool = pool.filter((c) => c.principle === filter.value);
   if (filter && filter.type === 'category') pool = pool.filter((c) => (c.category || 'Untagged') === filter.value);
 
-  if (isText(deck)) introduceChunks(deck);   // release today's new lines first
+  if (isText(deck)) introduceChunks(deck);
 
   let due = pool.filter((c) => isDue(c, today));
   if (!due.length && (studyAhead || filter)) due = pool.filter((c) => !c.mastered && (!c.passageId || c.intro));
@@ -645,16 +661,16 @@ function memAction(what) {
       advanceChunk(card, false); session.wrong++;
       $('#memActions').innerHTML = '<button class="btn primary" data-mem="continue">Try it again later</button>';
     }
-    bumpDaily();
     return;
   }
 
-  if (what === 'read') { advanceChunk(card, true); bumpDaily(); return showChunk(); }
-  if (what === 'recalled') { advanceChunk(card, true); bumpDaily(); return showChunk(); }
+  if (what === 'read') { advanceChunk(card, true); return showChunk(); }
+  if (what === 'recalled') { advanceChunk(card, true); return showChunk(); }
   if (what === 'continue') return nextChunk();
 }
 
 function nextChunk() {
+  bumpDaily();          // one line = one unit of tonight's work, however many rungs it took
   session.i++;
   $('#progressFill').style.width = `${(session.i / session.queue.length) * 100}%`;
   session.i >= session.queue.length ? finishSession() : showChunk();
@@ -1289,6 +1305,7 @@ function setupModals() {
     const n = deckCards(d.id).length;
     if (!confirm(`Delete "${d.name}" and its ${n} card${n === 1 ? '' : 's'}? This cannot be undone.`)) return;
     state.cards = state.cards.filter((c) => c.deckId !== d.id);
+    state.passages = (state.passages || []).filter((x) => x.deckId !== d.id);
     state.decks = state.decks.filter((x) => x.id !== d.id);
     if (state.activeDeck === d.id) state.activeDeck = state.decks[0]?.id || null;
     save(); $('#deckScrim').hidden = true; go('decks');
@@ -1390,6 +1407,8 @@ function setupSettings() {
       const data = JSON.parse(await file.text());
       if (!Array.isArray(data.cards)) throw new Error('bad shape');
       (data.decks || []).forEach((d) => { if (!state.decks.some((x) => x.id === d.id)) state.decks.push(d); });
+      state.passages = state.passages || [];
+      (data.passages || []).forEach((p) => { if (!state.passages.some((x) => x.id === p.id)) state.passages.push(p); });
       const existing = new Set(state.cards.map((c) => c.deckId + '|' + c.front));
       const ids = new Set(state.cards.map((c) => c.id));
       let added = 0;
@@ -1454,6 +1473,7 @@ function boot() {
   applyTheme(state.settings.theme);
   buildTabs();
   seed();
+  releaseDailyLines();
   publishStatus();
   setupAdd();
   setupBrowse();
@@ -1503,7 +1523,7 @@ function boot() {
   }, { passive: true });
 
   document.addEventListener('keydown', (e) => {
-    if (current !== 'study' || !session) return;
+    if (current !== 'study' || !session || session.text) return;
     if (['#scrim', '#deckScrim', '#nodeScrim', '#reviewScrim'].some((s) => !$(s).hidden)) return;
     const tag = document.activeElement.tagName;
     if (tag === 'TEXTAREA' || tag === 'INPUT' || tag === 'SELECT') return;
