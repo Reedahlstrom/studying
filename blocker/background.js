@@ -1,5 +1,5 @@
 /* ══════════════════════════════════════════════════════════════
-   Ledger Gate — background service worker.
+   Learn Things Good — Gate — background service worker.
 
    Holds one piece of state: whether today's cards are done. Blocks
    while they aren't, using declarativeNetRequest so the redirect

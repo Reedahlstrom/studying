@@ -9,7 +9,7 @@ chrome.runtime.sendMessage({ type: 'get-state' }, (state) => {
   if (!s) {
     $('#sub').textContent = 'No study record found for today.';
     $('#count').textContent = '?';
-    $('#unit').textContent = 'open Ledger so it can report in';
+    $('#unit').textContent = 'open Learn Things Good so it can report in';
     return;
   }
   const remaining = typeof s.remaining === 'number' ? s.remaining : Math.max(0, s.target - s.reviewed);

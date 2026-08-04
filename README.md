@@ -1,4 +1,4 @@
-# Ledger — Spaced Repetition Flashcards
+# Website for people to learn things good
 
 A small, offline-first PWA for studying **business, economics, and entrepreneurship**
 with the **Leitner box system**. No accounts, no backend, no build step — just static

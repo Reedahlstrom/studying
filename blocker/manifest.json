@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "Ledger Gate",
+  "name": "Learn Things Good — Gate",
   "version": "1.0.0",
   "description": "Keeps entertainment sites shut until tonight's flashcards are done.",
   "permissions": ["declarativeNetRequest", "storage", "alarms"],
@@ -16,7 +16,7 @@
   "web_accessible_resources": [
     { "resources": ["blocked.html", "blocked.js"], "matches": ["<all_urls>"] }
   ],
-  "action": { "default_popup": "popup.html", "default_title": "Ledger Gate" },
+  "action": { "default_popup": "popup.html", "default_title": "Learn Things Good — Gate" },
   "options_page": "options.html",
   "icons": { "128": "icon-128.png" }
 }

@@ -1,5 +1,5 @@
 /* ══════════════════════════════════════════════════════════════
-   Ledger — spaced repetition across decks.
+   Learn Things Good — spaced repetition across decks.
    No dependencies, no backend. State lives in localStorage.
    ══════════════════════════════════════════════════════════════ */
 import { PHASES, PRINCIPLES, CURRICULUM_CARDS } from './curriculum.js';
@@ -1197,7 +1197,7 @@ function seed() {
       if (match) { c.principle = match.principle; c.category = match.category; }
     });
     state.seedVersion = SEED_VERSION;
-    if (added) console.info(`Ledger: added ${added} curriculum cards.`);
+    if (added) console.info(`Learn Things Good: added ${added} curriculum cards.`);
   }
   if (!state.activeDeck) state.activeDeck = null;
   save();

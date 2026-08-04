@@ -1,4 +1,4 @@
-/* Runs only on the Ledger page. Reads the status the app publishes to
+/* Runs only on the Learn Things Good page. Reads the status the app publishes to
    localStorage and forwards it to the extension. Nothing else. */
 
 const KEY = 'ledger.status';

@@ -11,7 +11,7 @@ chrome.runtime.sendMessage({ type: 'get-state' }, (state) => {
       ? `${s.reviewed} cards reviewed today.`
       : `${s.reviewed}/${s.target} done · ${s.remaining} to go`;
   } else {
-    $('#sub').textContent = 'No report yet — open Ledger once.';
+    $('#sub').textContent = 'No report yet — open Learn Things Good once.';
   }
   const url = (state && state.appUrl) || 'https://reedahlstrom.github.io/studying/';
   $('#go').addEventListener('click', (e) => { e.preventDefault(); chrome.tabs.create({ url }); });

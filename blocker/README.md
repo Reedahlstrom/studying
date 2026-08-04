@@ -1,16 +1,16 @@
-# Ledger Gate
+# Learn Things Good — Gate
 
 A Chrome/Edge extension that blocks entertainment sites until tonight's flashcards are done.
 
 ## How it works
 
-Ledger writes a small status object to its own `localStorage` every time you answer a card:
+Learn Things Good writes a small status object to its own `localStorage` every time you answer a card:
 
 ```json
 { "day": "2026-08-03", "due": 437, "reviewed": 3, "target": 15, "remaining": 12, "done": false }
 ```
 
-A content script — which runs *only* on the Ledger page — forwards that to the extension.
+A content script — which runs *only* on the Learn Things Good page — forwards that to the extension.
 While `done` is false, `declarativeNetRequest` redirects the blocked domains to a
 "first things first" page before they load. When you hit your nightly target, the rules
 are removed and the sites work normally until midnight.
@@ -23,7 +23,7 @@ are removed and the sites work normally until midnight.
 1. Open `chrome://extensions`
 2. Turn on **Developer mode** (top right)
 3. Click **Load unpacked** and choose this `blocker` folder
-4. Open Ledger once so it can report in — the badge dot clears when you're done for the day
+4. Open Learn Things Good once so it can report in — the badge dot clears when you're done for the day
 
 Pin it to the toolbar to see progress at a glance.
 
@@ -43,9 +43,9 @@ automatically, so `youtube.com` also catches `m.youtube.com`.
   a different browser. That is deliberate — the point is to make the lazy path the study path.
   If you want it harder to escape, have someone else set a Chrome policy, or use a separate
   browser profile you don't administer.
-- **It only sees Ledger when a Ledger tab is open.** Finishing a session updates it within a
+- **It only sees Learn Things Good when a Learn Things Good tab is open.** Finishing a session updates it within a
   few seconds. If you study on your phone, the desktop extension won't know until you open
-  Ledger on the desktop.
+  Learn Things Good on the desktop.
 
 ## Permissions, and why
 
@@ -55,6 +55,6 @@ automatically, so `youtube.com` also catches `m.youtube.com`.
 | `storage` | Remembers your site list and the day's status. |
 | `alarms` | Re-locks at the date rollover if the browser stays open overnight. |
 | `host_permissions: <all_urls>` | Chrome requires host access to redirect a domain, and your block list is editable, so the set isn't known in advance. |
-| Content script on `reedahlstrom.github.io/studying/*` | Reads *only* Ledger's own status key. It runs nowhere else. |
+| Content script on `reedahlstrom.github.io/studying/*` | Reads *only* Learn Things Good's own status key. It runs nowhere else. |
 
 Nothing leaves your machine. There is no server and no analytics.
