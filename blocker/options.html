@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Ledger Gate</title><style>
+:root{color-scheme:light dark}
+body{max-width:540px;margin:40px auto;padding:0 24px;background:#fbfbf6;color:#1e2318;
+ font:400 15px/1.5 -apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+@media(prefers-color-scheme:dark){body{background:#14170f;color:#edf0e4}}
+h1{font-size:24px;font-weight:690;letter-spacing:-.02em;margin:0 0 6px}
+p{color:#6c7462;font-size:14px}
+@media(prefers-color-scheme:dark){p{color:#99a488}}
+textarea{width:100%;height:230px;margin-top:14px;padding:13px;border-radius:12px;font:14px/1.6 ui-monospace,monospace;
+ background:#f2f4ea;border:1px solid #e2e6d5;color:inherit;resize:vertical}
+@media(prefers-color-scheme:dark){textarea{background:#262c1d;border-color:#363d29}}
+textarea:focus{outline:none;border-color:#6d8340;box-shadow:0 0 0 4px #6d834024}
+button{margin-top:14px;padding:12px 22px;border:none;border-radius:13px;cursor:pointer;font-size:15px;font-weight:620;
+ color:#fff;background:linear-gradient(168deg,#6d8340,#4e6229)}
+#saved{margin-left:12px;color:#6d8340;font-weight:600;font-size:14px;opacity:0;transition:opacity .3s}
+#saved.on{opacity:1}
+</style></head><body>
+<h1>Blocked sites</h1>
+<p>One domain per line. Subdomains are covered automatically, so <code>youtube.com</code> also blocks <code>m.youtube.com</code>.</p>
+<textarea id="sites" spellcheck="false"></textarea>
+<div><button id="save">Save</button><span id="saved">Saved</span></div>
+<script src="options.js"></script></body></html>

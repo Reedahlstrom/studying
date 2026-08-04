@@ -26,8 +26,38 @@ const defaultState = () => ({
   decks: [], cards: [], activeDeck: null,
   settings: { target: 15, theme: 'light', requeue: false, apiKey: '' },
   streak: { count: 0, last: null },
+  daily: { day: null, count: 0 },
   seedVersion: 0,
 });
+
+/* ── the gate ──────────────────────────────────────────────────
+   Published to localStorage on every save so the companion browser
+   extension can tell whether tonight's cards are done. The extension
+   reads it; nothing here depends on the extension existing.        */
+const STATUS_KEY = 'ledger.status';
+
+function todayCount() {
+  const d = state.daily || {};
+  return d.day === dayKey() ? d.count : 0;
+}
+
+function publishStatus() {
+  const today = dayKey();
+  const due = state.cards.filter((c) => isDue(c, today)).length;
+  const reviewed = todayCount();
+  const target = state.settings.target;
+  try {
+    localStorage.setItem(STATUS_KEY, JSON.stringify({
+      day: today,
+      due,
+      reviewed,
+      target,
+      remaining: Math.max(0, Math.min(due, target - reviewed)),
+      done: due === 0 || reviewed >= target,
+      updated: new Date().toISOString(),
+    }));
+  } catch (_) { /* storage full — the gate simply stays shut */ }
+}
 
 let state = load();
 
@@ -84,7 +114,7 @@ let saveTimer = null;
 function save() {
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
-    try { localStorage.setItem(STORE_KEY, JSON.stringify(state)); }
+    try { localStorage.setItem(STORE_KEY, JSON.stringify(state)); publishStatus(); }
     catch (e) { toast('Could not save — storage is full.', 'bad'); }
   }, 60);
 }
@@ -194,6 +224,16 @@ function renderDecks() {
   $('#dueWord').textContent = dueAll.length === 1 ? 'card due' : 'cards due';
   $('#greeting').textContent = greetingText();
   $('#heroSub').textContent = state.decks.length > 1 ? `across ${state.decks.length} decks` : 'ready when you are';
+
+  /* gate status — mirrors what the blocker extension sees */
+  const reviewed = todayCount(), target = state.settings.target;
+  const done = dueAll.length === 0 || reviewed >= target;
+  const gate = $('#gate');
+  gate.hidden = false;
+  gate.classList.toggle('open', done);
+  $('#gateText').textContent = done
+    ? `Done for today — ${reviewed} reviewed. The gate is open.`
+    : `${Math.max(0, Math.min(dueAll.length, target - reviewed))} more to unlock today · ${reviewed}/${target}`;
 
   $('#deckGrid').innerHTML = state.decks.map((d, i) => {
     const cards = deckCards(d.id);
@@ -455,6 +495,10 @@ function answer(correct) {
   grade(card, correct);
   correct ? session.right++ : session.wrong++;
   bumpStreak();
+  const today = dayKey();
+  state.daily = state.daily && state.daily.day === today
+    ? { day: today, count: state.daily.count + 1 }
+    : { day: today, count: 1 };
   buzz(correct ? 10 : 22);
   if (!correct && state.settings.requeue && !session.requeued.has(card.id)) {
     session.requeued.add(card.id);
@@ -1164,6 +1208,7 @@ function boot() {
   applyTheme(state.settings.theme);
   buildTabs();
   seed();
+  publishStatus();
   setupAdd();
   setupBrowse();
   setupModals();

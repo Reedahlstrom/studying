@@ -172,6 +172,20 @@ svg { width: 1em; height: 1em; fill: none; stroke: currentColor; stroke-width: 1
 }
 .due-count small { font-size: 16px; font-weight: 500; color: var(--text-dim); }
 .hero .sub, .deck-hero .sub { color: var(--text-dim); font-size: 14.5px; max-width: 44ch; }
+
+/* gate status — what the blocker extension is acting on */
+.gate {
+  display: inline-flex; align-items: center; gap: 9px; margin-top: 16px;
+  padding: 9px 15px 9px 12px; border-radius: 999px; font-size: 13.5px; font-weight: 600;
+  background: color-mix(in srgb, var(--gold) 13%, transparent); color: var(--gold);
+  border: 1px solid color-mix(in srgb, var(--gold) 30%, transparent);
+  transition: background .4s var(--ease), color .4s var(--ease), border-color .4s var(--ease);
+}
+.gate.open { background: var(--olive-soft); color: var(--olive-deep); border-color: color-mix(in srgb, var(--olive) 32%, transparent); }
+[data-theme="dark"] .gate.open { color: var(--olive); }
+.gate-dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; animation: gatePulse 2.4s var(--ease) infinite; }
+.gate.open .gate-dot { animation: none; }
+@keyframes gatePulse { 0%,100%{ opacity:.45; transform:scale(.85) } 50%{ opacity:1; transform:scale(1) } }
 .deck-hero h1 { font-size: clamp(30px, 8vw, 40px); font-weight: 700; margin: 3px 0 7px; }
 .deck-hero .btn.big { margin-top: 20px; }
 

@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><style>
+:root{color-scheme:light dark}
+body{width:250px;margin:0;padding:18px;background:#fbfbf6;color:#1e2318;
+ font:400 14px/1.45 -apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+@media(prefers-color-scheme:dark){body{background:#14170f;color:#edf0e4}}
+.state{display:flex;align-items:center;gap:8px;font-weight:640;font-size:15px;margin-bottom:6px}
+.dot{width:9px;height:9px;border-radius:50%;background:#b3852a}
+.open .dot{background:#6d8340}
+.sub{color:#6c7462;font-size:13px}
+@media(prefers-color-scheme:dark){.sub{color:#99a488}}
+.bar{height:7px;border-radius:99px;background:#f2f4ea;overflow:hidden;margin:14px 0 4px}
+@media(prefers-color-scheme:dark){.bar{background:#262c1d}}
+.bar i{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,#4e6229,#6d8340);transition:width .5s}
+a{display:block;text-align:center;margin-top:14px;padding:11px;border-radius:12px;text-decoration:none;
+ background:linear-gradient(168deg,#6d8340,#4e6229);color:#fff;font-weight:620;font-size:14px}
+.opts{display:block;text-align:center;margin-top:8px;background:none;color:#6c7462;font-size:12px;padding:4px}
+</style></head><body>
+<div class="state" id="state"><span class="dot"></span><span id="label">…</span></div>
+<div class="sub" id="sub"></div>
+<div class="bar"><i id="bar" style="width:0"></i></div>
+<a id="go" href="#">Open Ledger</a>
+<a class="opts" id="opts" href="#">Edit blocked sites</a>
+<script src="popup.js"></script></body></html>
