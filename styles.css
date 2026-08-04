@@ -180,6 +180,12 @@ svg { width: 1em; height: 1em; fill: none; stroke: currentColor; stroke-width: 1
   font-variant-numeric: tabular-nums;
 }
 .due-count small { font-size: 16px; font-weight: 500; color: var(--text-dim); }
+/* finished for the day: the message replaces the number entirely */
+.due-count.done span { display: none; }
+.due-count.done small {
+  font-size: clamp(24px, 6.4vw, 36px); font-weight: 690; letter-spacing: -.03em;
+  line-height: 1.15; color: var(--text); text-wrap: balance;
+}
 .hero .sub, .deck-hero .sub { color: var(--text-dim); font-size: 14.5px; max-width: 44ch; }
 
 /* gate status — what the blocker extension is acting on */
@@ -392,6 +398,58 @@ kbd { font: 500 11px/1 ui-monospace, monospace; padding: 3px 5px; border-radius:
 .btn.got { background: linear-gradient(168deg, var(--green), var(--green-deep)); color: #fff; border-color: transparent; box-shadow: 0 6px 18px -10px var(--green-deep); }
 [data-theme="dark"] .btn.got { color: #14180e; }
 .btn.miss { background: var(--red-soft); color: var(--red); border-color: color-mix(in srgb, var(--red) 34%, transparent); }
+
+/* ══════════ memorising a passage ══════════ */
+.memorize { flex: 1; display: flex; flex-direction: column; gap: 16px; padding: 20px 0 8px; max-width: 620px; width: 100%; margin: 0 auto; }
+.memorize.enter { animation: cardIn .42s var(--spring) both; }
+.mem-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.mem-text {
+  font-size: clamp(19px, 4.4vw, 24px); line-height: 1.6; font-weight: 500; letter-spacing: -.01em;
+  padding: 26px 24px; border-radius: var(--r-lg);
+  background: linear-gradient(168deg, var(--bg-elev), var(--bg-elev-2));
+  border: 1px solid var(--line); box-shadow: var(--shadow);
+}
+.mem-text.cue {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: clamp(17px, 3.8vw, 21px); letter-spacing: .06em; word-spacing: .22em;
+  color: var(--olive-deep);
+}
+[data-theme="dark"] .mem-text.cue { color: var(--olive); }
+.mem-input {
+  font-size: 17px; line-height: 1.6; padding: 18px; border-radius: var(--r-lg);
+  min-height: 130px; resize: vertical;
+}
+.mem-diff {
+  font-size: 16px; line-height: 1.9; padding: 16px 18px; border-radius: var(--r);
+  background: var(--bg-elev-2); border: 1px solid var(--line-soft);
+}
+.mem-diff .ok { color: var(--text-dim); }
+.mem-diff .no {
+  color: var(--red); font-weight: 650;
+  text-decoration: underline; text-decoration-style: wavy; text-underline-offset: 4px;
+}
+.mem-diff .cue-inline { font-family: ui-monospace, monospace; letter-spacing: .06em; color: var(--olive-deep); }
+[data-theme="dark"] .mem-diff .cue-inline { color: var(--olive); }
+.mem-actions { display: flex; gap: 11px; margin-top: auto; padding-bottom: 6px; }
+.mem-actions .btn { flex: 1; padding: 16px; font-size: 16px; border-radius: 16px; }
+
+/* the estimate offered when you paste a passage */
+.estimate { display: grid; gap: 12px; }
+.est-head { font-size: 14px; font-weight: 600; }
+.est-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 9px; }
+@media (max-width: 540px) { .est-row { grid-template-columns: 1fr; } }
+.est {
+  display: grid; gap: 2px; text-align: left; padding: 14px 15px; border-radius: var(--r);
+  background: var(--bg-elev-2); border: 1.5px solid transparent; color: inherit;
+  transition: border-color .22s var(--ease), transform .26s var(--spring), background .22s;
+}
+.est:hover { transform: translateY(-2px); }
+.est.on { border-color: var(--olive); background: var(--olive-soft); }
+.est strong { font-size: 14px; font-weight: 660; }
+.est-days { font-size: 21px; font-weight: 690; letter-spacing: -.02em; color: var(--olive-deep); font-variant-numeric: tabular-nums; }
+[data-theme="dark"] .est-days { color: var(--olive); }
+.est-sub { font-size: 12px; color: var(--text-dim); }
+.est-sub.dim { color: var(--text-faint); }
 
 .session-done { text-align: center; padding: 30px 10px 18px; animation: riseIn .5s var(--ease) both; }
 .done-ring { position: relative; width: 130px; height: 130px; margin: 0 auto 20px; display: grid; place-items: center; }

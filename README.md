@@ -50,6 +50,24 @@ target (default 15). Mastered cards leave rotation but stay visible under
 5. Business Models & Strategy
 6. Fundraising & Growth
 
+
+## Memorising text
+
+Make a deck of kind **Text to memorise**, paste a passage, and it is split into
+speakable lines (whole clauses, never mid-phrase). Each line climbs a ladder:
+
+1. **Read it** — twice, in full
+2. **From first letters** — `F___ s___ a__ s___ y___ a__` — recite it, then check
+3. **Type it out** — from memory; case and punctuation are forgiven, words are not
+
+Get a line typed correctly and it enters the same Leitner boxes as everything else, so
+it comes back at 2, 4, 8 and 16 days and eventually retires as mastered. Miss a word and
+it drops to Box 1 and back to the first-letter rung.
+
+When you paste, you get an estimate at three paces — Steady (15 new words a night),
+Normal (30) and Ambitious (60) — showing days to know it, days to master it, and minutes
+a night. New lines are released on that budget rather than all at once.
+
 ## Install on your phone
 
 Open the live URL in Safari → Share → **Add to Home Screen**. It launches full-screen and

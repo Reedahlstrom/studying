@@ -124,6 +124,18 @@
       </div>
     </div>
 
+    <!-- memorising a passage: read → first letters → type it -->
+    <div class="memorize" id="memorize" hidden>
+      <div class="mem-head">
+        <span class="cat-chip" id="memPassage">Passage</span>
+        <span class="box-chip" id="memStage">Read it</span>
+      </div>
+      <p class="mem-text" id="memText">—</p>
+      <textarea class="mem-input" id="memInput" rows="4" placeholder="Type it from memory…" spellcheck="false" hidden></textarea>
+      <div class="mem-diff" id="memDiff" hidden></div>
+      <div class="mem-actions" id="memActions"></div>
+    </div>
+
     <div class="answer-row" id="answerRow">
       <button class="btn miss" id="missBtn"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg><span>Missed it</span></button>
       <button class="btn got" id="gotBtn"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12.5l5 5L20 6.5"/></svg><span>Got it</span></button>
@@ -204,6 +216,19 @@ opportunity cost&#9;what you gave up"></textarea></label>
         <button class="btn primary" type="submit" id="notesBtn">Make cards</button>
       </div>
       <p class="hint keyless" hidden>Needs a Claude API key — add one in Settings.</p>
+    </form>
+
+    <!-- memorize a passage (text decks) -->
+    <form class="panel form" id="memForm" hidden>
+      <label class="field"><span>What is it called</span>
+        <input id="mTitle" placeholder="Gettysburg Address, Psalm 23, the opening of your pitch…" /></label>
+      <label class="field"><span>Paste the text</span>
+        <textarea id="mText" rows="8" placeholder="Paste the passage exactly as you want to memorise it — punctuation and all."></textarea></label>
+      <div id="mEstimate" class="estimate" hidden></div>
+      <div class="form-actions">
+        <span class="added-count" id="mCount"></span>
+        <button class="btn primary" type="submit" id="mCreate" disabled>Add passage</button>
+      </div>
     </form>
 
     <!-- generate -->
@@ -331,6 +356,13 @@ opportunity cost&#9;what you gave up"></textarea></label>
   <div class="modal" role="dialog" aria-modal="true" aria-labelledby="deckModalTitle">
     <h3 id="deckModalTitle">New deck</h3>
     <label class="field"><span>Name</span><input id="dName" placeholder="BIOL 210, Spanish, Chess openings…" /></label>
+    <div class="field" id="dKindField"><span>What goes in it</span>
+      <div class="seg" id="dKindSeg">
+        <button class="seg-btn on" type="button" data-kind="plain">Cards</button>
+        <button class="seg-btn" type="button" data-kind="text">Text to memorise</button>
+        <span class="seg-thumb" id="dKindThumb"></span>
+      </div>
+    </div>
     <div class="field"><span>Colour</span><div class="swatches" id="dSwatches"></div></div>
     <div class="modal-actions">
       <button class="btn danger-ghost" id="dDelete" hidden>Delete deck</button>

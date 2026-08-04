@@ -3,6 +3,7 @@
    No dependencies, no backend. State lives in localStorage.
    ══════════════════════════════════════════════════════════════ */
 import { PHASES, PRINCIPLES, CURRICULUM_CARDS } from './curriculum.js';
+import { AMBITION, chunkText, firstLetters, gradeTyping, estimateAll, wordsIn } from './passages.js';
 
 const STORE_KEY = 'ledger.v2';
 const LEGACY_KEY = 'ledger.v1';
@@ -23,7 +24,7 @@ const daysBetween = (a, b) => Math.round((keyToDate(b) - keyToDate(a)) / 8640000
 
 /* ───────────────────────── state ───────────────────────── */
 const defaultState = () => ({
-  decks: [], cards: [], activeDeck: null,
+  decks: [], cards: [], passages: [], activeDeck: null,
   settings: { target: 15, theme: 'light', requeue: false, apiKey: '' },
   streak: { count: 0, last: null },
   daily: { day: null, count: 0 },
@@ -80,6 +81,7 @@ function hydrate(parsed) {
   s.streak = { ...defaultState().streak, ...(parsed.streak || {}) };
   s.decks = Array.isArray(parsed.decks) ? parsed.decks : [];
   s.cards = Array.isArray(parsed.cards) ? parsed.cards.map(normalizeCard) : [];
+  s.passages = Array.isArray(parsed.passages) ? parsed.passages : [];
   return s;
 }
 
@@ -107,6 +109,12 @@ function normalizeCard(c) {
     seen: Number(c.seen) || 0,
     right: Number(c.right) || 0,
     source: c.source || 'manual',
+    /* passage chunks only — null on ordinary cards */
+    passageId: c.passageId || null,
+    order: c.passageId ? Number(c.order) || 0 : null,
+    stage: c.passageId ? Number(c.stage) || 0 : null,
+    reps: c.passageId ? Number(c.reps) || 0 : 0,
+    intro: c.passageId ? (c.intro || null) : null,
   };
 }
 
@@ -123,6 +131,7 @@ const uid = () => (crypto.randomUUID ? crypto.randomUUID() : 'c' + Date.now().to
 /* ───────────────────── leitner scheduling ───────────────────── */
 function isDue(card, today = dayKey()) {
   if (card.mastered) return false;
+  if (card.passageId && !card.intro) return false;   // not introduced yet — waits its turn
   if (!card.lastReviewed) return true;
   if (card.box <= 1) return true;                      // Box 1 comes up every session
   return daysBetween(card.lastReviewed, today) >= INTERVALS[card.box];
@@ -152,6 +161,84 @@ const esc = (s) => String(s).replace(/[&<>"']/g, (m) => ({ '&': '&amp;', '<': '&
 const deckCards = (id = state.activeDeck) => state.cards.filter((c) => c.deckId === id);
 const activeDeck = () => state.decks.find((d) => d.id === state.activeDeck) || null;
 const isCurriculum = (deck) => deck && deck.kind === 'curriculum';
+const isText = (deck) => deck && deck.kind === 'text';
+
+/* ── passages ───────────────────────────────────────────────────
+   A chunk of text is a card with a different ritual: read it, recall
+   it from first letters, then type it. After that it rides the same
+   Leitner boxes as everything else.
+   Stages: 0 read · 1 first letters · 2 type it · 3 learned (review). */
+const STAGE_LABEL = ['Read it', 'From first letters', 'Type it out', 'Type it out'];
+const passagesIn = (deckId) => (state.passages || []).filter((p) => p.deckId === deckId);
+const chunksOf = (passageId) => state.cards.filter((c) => c.passageId === passageId)
+  .sort((a, b) => a.order - b.order);
+
+function addPassage(deck, title, text, ambitionId) {
+  const pieces = chunkText(text);
+  if (!pieces.length) return null;
+  const passage = {
+    id: 'p-' + uid().slice(0, 8),
+    deckId: deck.id,
+    title: title.trim() || 'Untitled passage',
+    ambition: ambitionId,
+    words: wordsIn(text),
+    created: new Date().toISOString(),
+  };
+  state.passages = state.passages || [];
+  state.passages.push(passage);
+  pieces.forEach((t, i) => {
+    state.cards.push(normalizeCard({
+      deckId: deck.id, front: t, back: t, category: passage.title,
+      passageId: passage.id, order: i, stage: 0, reps: 0,
+      intro: null, source: 'passage',
+    }));
+  });
+  save();
+  return passage;
+}
+
+/* A chunk is only in play once it has been introduced on some day. */
+function introduceChunks(deck) {
+  const today = dayKey();
+  let budget = 0;
+  for (const p of passagesIn(deck.id)) budget = Math.max(budget, (AMBITION[p.ambition] || AMBITION.normal).wordsPerDay);
+  const already = state.cards.filter((c) => c.passageId && c.deckId === deck.id && c.intro === today);
+  let spent = already.reduce((n, c) => n + wordsIn(c.front), 0);
+  for (const p of passagesIn(deck.id)) {
+    const perDay = (AMBITION[p.ambition] || AMBITION.normal).wordsPerDay;
+    for (const c of chunksOf(p.id)) {
+      if (c.intro) continue;
+      if (spent >= perDay) break;
+      c.intro = today;
+      spent += wordsIn(c.front);
+    }
+  }
+  save();
+}
+
+/* Grading a chunk: advance the ritual, then hand it to the Leitner boxes. */
+function advanceChunk(card, ok) {
+  card.seen += 1;
+  if (card.stage === 0) {                       // reading
+    card.reps = (card.reps || 0) + 1;
+    if (card.reps >= 2) card.stage = 1;
+  } else if (card.stage === 1) {                // first letters
+    if (ok) card.stage = 2; else card.reps = 0;
+  } else {                                      // typing — the real test
+    if (ok) {
+      card.right += 1;
+      card.lastReviewed = dayKey();
+      if (card.stage === 2) { card.stage = 3; card.box = 2; }   // learned; enters the ladder
+      else if (card.box >= BOX_COUNT) card.mastered = true;
+      else card.box += 1;
+    } else {
+      card.box = 1;
+      card.lastReviewed = null;                 // wrong means due again tonight
+      card.stage = 1;                           // drop back to the first-letter rung
+    }
+  }
+  save();
+}
 
 function toast(msg, kind = '') {
   const el = document.createElement('div');
@@ -220,8 +307,16 @@ function openDeck(id) { state.activeDeck = id; save(); go('deck'); }
 function renderDecks() {
   const today = dayKey();
   const dueAll = state.cards.filter((c) => isDue(c, today));
-  $('#dueBig').textContent = dueAll.length;
-  $('#dueWord').textContent = dueAll.length === 1 ? 'card due' : 'cards due';
+  const reviewedToday = todayCount(), nightlyTarget = state.settings.target;
+  /* only tonight's slice — the full backlog is discouraging and not actionable */
+  const leftTonight = Math.max(0, Math.min(dueAll.length, nightlyTarget - reviewedToday));
+  const finished = dueAll.length === 0 || reviewedToday >= nightlyTarget;
+
+  $('.due-count').classList.toggle('done', finished);
+  $('#dueBig').textContent = finished ? '' : leftTonight;
+  $('#dueWord').textContent = finished
+    ? 'Go chud it out today, you earned it'
+    : leftTonight === 1 ? 'card due today' : 'cards due today';
   $('#greeting').textContent = greetingText();
   $('#heroSub').textContent = state.decks.length > 1 ? `across ${state.decks.length} decks` : 'ready when you are';
 
@@ -238,14 +333,15 @@ function renderDecks() {
   $('#deckGrid').innerHTML = state.decks.map((d, i) => {
     const cards = deckCards(d.id);
     const due = cards.filter((c) => isDue(c, today)).length;
+    const dueTonight = Math.min(due, leftTonight);   // tonight's slice, not the backlog
     const mastered = cards.filter((c) => c.mastered).length;
     const pct = cards.length ? Math.round((mastered / cards.length) * 100) : 0;
     return `<button class="deck-card" data-deck="${d.id}" style="--dc:${d.color};animation-delay:${i * 45}ms">
       <div class="deck-top">
         <span class="deck-name">${esc(d.name)}</span>
-        <span class="deck-due ${due ? '' : 'zero'}">${due ? due + ' due' : 'clear'}</span>
+        <span class="deck-due ${dueTonight ? '' : 'zero'}">${dueTonight ? dueTonight + ' due' : 'clear'}</span>
       </div>
-      <div class="deck-meta">${isCurriculum(d) ? '<span class="deck-tag">curriculum</span> · ' : ''}${cards.length} card${cards.length === 1 ? '' : 's'} · ${mastered} mastered · ${pct}%</div>
+      <div class="deck-meta">${isCurriculum(d) ? '<span class="deck-tag">curriculum</span> · ' : ''}${mastered} mastered · ${pct}%</div>
       <div class="deck-bar"><i style="width:${pct}%;background:linear-gradient(90deg,${d.color},${d.color}bb)"></i></div>
     </button>`;
   }).join('') + `<button class="new-deck" id="newDeckBtn" style="animation-delay:${state.decks.length * 45}ms">
@@ -293,8 +389,8 @@ function renderDeck() {
     btn.dataset.action = 'ahead';
     btn.disabled = cards.every((c) => c.mastered);
   } else {
-    const extra = due.length > target ? ` of ${due.length} due` : '';
-    $('#deckSub').textContent = `${Math.min(due.length, target)} card${Math.min(due.length, target) === 1 ? '' : 's'}${extra} waiting tonight.`;
+    const tonight = Math.max(1, Math.min(due.length, target - todayCount()));
+    $('#deckSub').textContent = `${tonight} card${tonight === 1 ? '' : 's'} due today.`;
     btn.querySelector('span').textContent = 'Start session';
     btn.dataset.action = 'study'; btn.disabled = false;
   }
@@ -448,15 +544,21 @@ function startSession(filter = null, studyAhead = false) {
   if (filter && filter.type === 'principle') pool = pool.filter((c) => c.principle === filter.value);
   if (filter && filter.type === 'category') pool = pool.filter((c) => (c.category || 'Untagged') === filter.value);
 
-  let due = pool.filter((c) => isDue(c, today));
-  if (!due.length && (studyAhead || filter)) due = pool.filter((c) => !c.mastered);
+  if (isText(deck)) introduceChunks(deck);   // release today's new lines first
 
-  const queue = shuffle(due).slice(0, state.settings.target);
-  session = { queue, i: 0, right: 0, wrong: 0, revealed: false, requeued: new Set(), filter };
+  let due = pool.filter((c) => isDue(c, today));
+  if (!due.length && (studyAhead || filter)) due = pool.filter((c) => !c.mastered && (!c.passageId || c.intro));
+
+  /* passages are learned in order — shuffling a poem is nonsense */
+  const queue = isText(deck)
+    ? due.sort((a, b) => (a.passageId === b.passageId ? a.order - b.order : String(a.passageId).localeCompare(String(b.passageId))))
+    : shuffle(due).slice(0, state.settings.target);
+  session = { queue: isText(deck) ? queue : queue, i: 0, right: 0, wrong: 0, revealed: false, requeued: new Set(), filter, text: isText(deck) };
   $('#sessionDone').hidden = true;
-  $('#stage').hidden = false;
-  $('#answerRow').hidden = false;
-  showCard();
+  $('#stage').hidden = session.text;
+  $('#answerRow').hidden = session.text;
+  $('#memorize').hidden = !session.text;
+  session.text ? showChunk() : showCard();
 }
 
 function showCard() {
@@ -479,6 +581,92 @@ function showCard() {
   $('#progressFill').style.width = `${(session.i / total) * 100}%`;
   void slot.offsetWidth;
   slot.classList.add('enter');
+}
+
+/* ── the memorize loop ─────────────────────────────────────────── */
+function showChunk() {
+  if (!session) return;
+  const card = session.queue[session.i];
+  if (!card) return finishSession();
+  const passage = (state.passages || []).find((p) => p.id === card.passageId);
+  const stage = card.stage;
+
+  $('#memPassage').textContent = passage ? passage.title : 'Passage';
+  $('#memStage').textContent = stage === 0 ? `Read it (${(card.reps || 0) + 1} of 2)` : STAGE_LABEL[stage];
+  $('#memDiff').hidden = true;
+  $('#memDiff').innerHTML = '';
+  const input = $('#memInput');
+  input.value = '';
+
+  const total = session.queue.length;
+  $('#progressText').textContent = `${session.i + 1} / ${total}`;
+  $('#progressFill').style.width = `${(session.i / total) * 100}%`;
+
+  const text = $('#memText');
+  if (stage === 0) {
+    text.hidden = false; text.classList.remove('cue'); text.textContent = card.front;
+    input.hidden = true;
+    $('#memActions').innerHTML = '<button class="btn primary" data-mem="read">I have read it</button>';
+  } else if (stage === 1) {
+    text.hidden = false; text.classList.add('cue'); text.textContent = firstLetters(card.front);
+    input.hidden = true;
+    $('#memActions').innerHTML =
+      '<button class="btn ghost" data-mem="peek">Show me</button>' +
+      '<button class="btn primary" data-mem="recalled">I said it right</button>';
+  } else {
+    text.hidden = true; text.classList.remove('cue');
+    input.hidden = false;
+    $('#memActions').innerHTML =
+      '<button class="btn ghost" data-mem="hint">Hint</button>' +
+      '<button class="btn primary" data-mem="check">Check</button>';
+    setTimeout(() => input.focus(), 80);
+  }
+  $('#memorize').classList.remove('enter'); void $('#memorize').offsetWidth; $('#memorize').classList.add('enter');
+}
+
+function memAction(what) {
+  if (!session) return;
+  const card = session.queue[session.i];
+  if (!card) return;
+
+  if (what === 'peek') { $('#memText').classList.remove('cue'); $('#memText').textContent = card.front; return; }
+  if (what === 'hint') { $('#memDiff').hidden = false; $('#memDiff').innerHTML = `<span class="cue-inline">${esc(firstLetters(card.front))}</span>`; return; }
+
+  if (what === 'check') {
+    const result = gradeTyping(card.front, $('#memInput').value);
+    $('#memDiff').hidden = false;
+    $('#memDiff').innerHTML = result.marks.map((m) => `<span class="${m.ok ? 'ok' : 'no'}">${esc(m.word)}</span>`).join(' ');
+    if (result.exact) {
+      toast('Word perfect.', 'good'); buzz(14);
+      advanceChunk(card, true); session.right++;
+      setTimeout(nextChunk, 900);
+    } else {
+      toast(`${result.wrong} word${result.wrong === 1 ? '' : 's'} off — the misses are marked.`, 'bad'); buzz(24);
+      advanceChunk(card, false); session.wrong++;
+      $('#memActions').innerHTML = '<button class="btn primary" data-mem="continue">Try it again later</button>';
+    }
+    bumpDaily();
+    return;
+  }
+
+  if (what === 'read') { advanceChunk(card, true); bumpDaily(); return showChunk(); }
+  if (what === 'recalled') { advanceChunk(card, true); bumpDaily(); return showChunk(); }
+  if (what === 'continue') return nextChunk();
+}
+
+function nextChunk() {
+  session.i++;
+  $('#progressFill').style.width = `${(session.i / session.queue.length) * 100}%`;
+  session.i >= session.queue.length ? finishSession() : showChunk();
+}
+
+function bumpDaily() {
+  bumpStreak();
+  const today = dayKey();
+  state.daily = state.daily && state.daily.day === today
+    ? { day: today, count: state.daily.count + 1 }
+    : { day: today, count: 1 };
+  save();
 }
 
 function reveal() {
@@ -518,6 +706,7 @@ function finishSession() {
   const answered = session.right + session.wrong;
   $('#stage').hidden = true;
   $('#answerRow').hidden = true;
+  $('#memorize').hidden = true;
   $('#sessionDone').hidden = false;
   const pct = answered ? Math.round((session.right / answered) * 100) : 0;
   $('#donePct').textContent = pct + '%';
@@ -764,6 +953,15 @@ function renderReview() {
 function renderAdd() {
   const deck = activeDeck(); if (!deck) return;
   $('#addDeckName').textContent = deck.name;
+
+  /* text decks take passages, not cards — swap the whole form set */
+  const textDeck = isText(deck);
+  $('#addModeSeg').hidden = textDeck;
+  $('#memForm').hidden = !textDeck;
+  if (textDeck) {
+    ['#addForm', '#pasteForm', '#notesForm', '#genForm'].forEach((s) => { $(s).hidden = true; });
+    return;
+  }
   const topics = [...new Set(deckCards(deck.id).map((c) => c.category).filter(Boolean))];
   $('#topicList').innerHTML = topics.map((t) => `<option value="${esc(t)}">`).join('');
 
@@ -900,6 +1098,45 @@ function setupAdd() {
   });
   new ResizeObserver(() => moveThumb(seg, $('#segThumb'))).observe(seg);
 
+  /* ── memorize form: live estimate, pick your pace ── */
+  let chosenAmbition = 'normal';
+  const refreshEstimate = () => {
+    const text = $('#mText').value;
+    const words = wordsIn(text);
+    const box = $('#mEstimate');
+    if (words < 5) { box.hidden = true; $('#mCreate').disabled = true; return; }
+    box.hidden = false; $('#mCreate').disabled = false;
+    const options = estimateAll(text);
+    const chunks = options[0].chunks;
+    box.innerHTML = `<p class="est-head">${words} words · ${chunks} line${chunks === 1 ? '' : 's'} to learn. How hard do you want to push?</p>
+      <div class="est-row">${options.map((o) => `
+        <button type="button" class="est ${o.id === chosenAmbition ? 'on' : ''}" data-amb="${o.id}">
+          <strong>${o.label}</strong>
+          <span class="est-days">${o.daysToLearn} day${o.daysToLearn === 1 ? '' : 's'}</span>
+          <span class="est-sub">to know it · ${o.minutesPerDay} min/night</span>
+          <span class="est-sub dim">mastered in ${o.daysToMaster} days</span>
+        </button>`).join('')}</div>
+      <p class="hint">Estimates, not promises — based on ${options[0].perDay}–${options[2].perDay} new words a night plus reviews. The mastered date includes the full box ladder after the last line is learned.</p>`;
+    $$('#mEstimate .est').forEach((b) => b.addEventListener('click', () => { chosenAmbition = b.dataset.amb; refreshEstimate(); }));
+  };
+  $('#mText').addEventListener('input', refreshEstimate);
+
+  $('#memForm').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const deck = activeDeck();
+    const text = $('#mText').value.trim();
+    if (wordsIn(text) < 5) return toast('Paste a bit more text.', 'bad');
+    const p = addPassage(deck, $('#mTitle').value, text, chosenAmbition);
+    if (!p) return toast('Could not read that text.', 'bad');
+    const n = chunksOf(p.id).length;
+    $('#mCount').textContent = `${p.title} · ${n} lines`;
+    $('#mCount').classList.add('on');
+    $('#mTitle').value = ''; $('#mText').value = '';
+    refreshEstimate();
+    toast(`Added "${p.title}" — ${n} lines to learn.`, 'good');
+    buzz(20);
+  });
+
   $('#reviewNone').addEventListener('click', () => { pending = []; $('#reviewScrim').hidden = true; });
   $('#reviewAdd').addEventListener('click', () => {
     const keep = pending.filter((c) => c.keep);
@@ -1025,16 +1262,22 @@ function setupModals() {
   /* deck sheet */
   $('#dCancel').addEventListener('click', () => { $('#deckScrim').hidden = true; });
   $('#deckScrim').addEventListener('click', (e) => { if (e.target === $('#deckScrim')) $('#deckScrim').hidden = true; });
+  $('#dKindSeg').addEventListener('click', (e) => {
+    const b = e.target.closest('.seg-btn'); if (!b) return;
+    $$('#dKindSeg .seg-btn').forEach((x) => x.classList.toggle('on', x === b));
+    moveThumb($('#dKindSeg'), $('#dKindThumb'));
+  });
   $('#dSave').addEventListener('click', () => {
     const name = $('#dName').value.trim();
     if (!name) return toast('Give the deck a name.', 'bad');
     const color = $('#dSwatches .swatch.on')?.dataset.color || DECK_COLORS[0];
+    const kind = $('#dKindSeg .seg-btn.on')?.dataset.kind || 'plain';
     if (editingDeck) {
       const d = state.decks.find((x) => x.id === editingDeck);
       if (d) { d.name = name; d.color = color; }
     } else {
       const id = 'deck-' + uid().slice(0, 8);
-      state.decks.push({ id, name, color, kind: 'plain', created: new Date().toISOString() });
+      state.decks.push({ id, name, color, kind, created: new Date().toISOString() });
       state.activeDeck = id;
     }
     save(); $('#deckScrim').hidden = true;
@@ -1077,6 +1320,9 @@ function openDeckSheet(deckId = null) {
   $('#deckModalTitle').textContent = d ? 'Edit deck' : 'New deck';
   $('#dName').value = d ? d.name : '';
   $('#dDelete').hidden = !d || isCurriculum(d);
+  $('#dKindField').hidden = !!d;                      // kind is fixed once cards exist
+  $$('#dKindSeg .seg-btn').forEach((b) => b.classList.toggle('on', b.dataset.kind === 'plain'));
+  requestAnimationFrame(() => moveThumb($('#dKindSeg'), $('#dKindThumb')));
   $('#dSwatches').innerHTML = DECK_COLORS.map((c) => `<button class="swatch ${(d ? d.color : DECK_COLORS[state.decks.length % DECK_COLORS.length]) === c ? 'on' : ''}" data-color="${c}" style="background:${c}" aria-label="colour"></button>`).join('');
   $$('#dSwatches .swatch').forEach((s) => s.addEventListener('click', () => {
     $$('#dSwatches .swatch').forEach((x) => x.classList.toggle('on', x === s));
@@ -1230,6 +1476,13 @@ function boot() {
     if (action === 'add') return go('add');
     if (action === 'ahead') { go('study', { keepSession: true }); startSession(null, true); return; }
     go('study');
+  });
+
+  $('#memActions').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-mem]'); if (b) memAction(b.dataset.mem);
+  });
+  $('#memInput').addEventListener('keydown', (e) => {
+    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); memAction('check'); }
   });
 
   const fc = $('#flashcard');
