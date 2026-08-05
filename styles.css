@@ -940,3 +940,64 @@ select { padding-right: 38px; cursor: pointer; }
   font-size: 15px; font-weight: 620; color: #fff;
   background: linear-gradient(168deg, var(--olive), var(--olive-deep));
 }
+
+/* ══════════ the grove: one page, trees you tick ══════════ */
+.grove { display: grid; gap: 14px; margin-top: 22px; }
+.tree-card {
+  display: block; text-align: left; padding: 0; overflow: hidden;
+  border-radius: var(--r-xl); background: var(--bg-elev);
+  border: 1px solid var(--line-soft); box-shadow: var(--shadow);
+  animation: riseIn .42s var(--ease) both;
+  transition: border-color .35s var(--ease), box-shadow .35s var(--ease);
+}
+.tree-card.tended { border-color: color-mix(in srgb, var(--olive) 40%, transparent); }
+.tree-card:hover { box-shadow: var(--shadow-lg); }
+
+.tree-top { display: grid; grid-template-columns: 116px 1fr; gap: 16px; align-items: center; padding: 18px 20px 14px; cursor: pointer; }
+.tree-top .goal-tree { width: 116px; height: 134px; }
+.tree-name { font-size: 18px; font-weight: 670; letter-spacing: -.02em; }
+.tree-why { font-size: 13px; color: var(--text-dim); font-style: italic; margin-top: 3px; }
+.tree-tended { font-size: 12.5px; color: var(--text-faint); margin-top: 6px; font-variant-numeric: tabular-nums; }
+.tree-tended.warn { color: var(--gold); }
+.strip { display: grid; grid-template-columns: repeat(30, 1fr); gap: 2px; margin-top: 10px; max-width: 320px; }
+.strip i { aspect-ratio: 1; border-radius: 1.5px; background: var(--bg-elev-2); border: 1px solid var(--line-soft); }
+.strip i.on { background: var(--olive); border-color: var(--olive); }
+
+.seed-list { border-top: 1px solid var(--line-soft); }
+.seed {
+  display: grid; grid-template-columns: auto 1fr auto auto; align-items: center; gap: 12px;
+  padding: 13px 20px; cursor: pointer; border-bottom: 1px solid var(--line-soft);
+  transition: background .2s var(--ease);
+}
+.seed:last-child { border-bottom: none; }
+.seed:hover { background: var(--bg-elev-2); }
+.seed.done { opacity: .5; }
+.seed.done .seed-name { text-decoration: line-through; }
+.seed .tick {
+  width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center;
+  border: 2px solid var(--line); color: transparent; flex: none;
+  transition: background .25s var(--ease), border-color .25s, color .25s;
+}
+.seed .tick svg { width: 14px; height: 14px; stroke-width: 3; }
+.seed.done .tick { background: var(--olive); border-color: var(--olive); color: #fff; }
+[data-theme="dark"] .seed.done .tick { color: #161a10; }
+.seed-body { min-width: 0; }
+.seed-name { font-size: 15px; font-weight: 600; display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+.seed-name .gate-tag { font-style: normal; }
+.seed-floor { display: block; font-size: 12px; color: var(--text-faint); margin-top: 2px; }
+.seed-go { color: var(--olive); display: grid; place-items: center; }
+.seed-go svg { width: 17px; height: 17px; }
+.seed-edit { width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center; color: var(--text-faint); opacity: .5; }
+.seed-edit svg { width: 14px; height: 14px; }
+.seed-edit:hover { opacity: 1; background: var(--bg-elev-2); }
+.seed-empty { padding: 16px 20px; font-size: 13px; color: var(--text-faint); }
+.grove-actions { display: grid; gap: 10px; }
+
+@media (max-width: 480px) {
+  .tree-top { grid-template-columns: 84px 1fr; gap: 12px; padding: 15px 15px 12px; }
+  .tree-top .goal-tree { width: 84px; height: 98px; }
+  .tree-name { font-size: 16px; }
+  .seed { padding: 13px 15px; gap: 10px; }
+  .seed .tick { width: 32px; height: 32px; }
+  .strip { max-width: none; }
+}

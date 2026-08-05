@@ -41,7 +41,7 @@
 
 <main id="app">
 
-  <!-- ───────────────── TODAY ───────────────── -->
+  <!-- ───────────────── GOALS: the whole thing ───────────────── -->
   <section class="view" id="view-today" data-view="today">
     <div class="hero">
       <p class="eyebrow" id="todayGreeting">Good evening</p>
@@ -49,65 +49,14 @@
       <div class="gate" id="gate" hidden><span class="gate-dot"></span><span id="gateText">—</span></div>
     </div>
 
-    <div class="today-group" id="firstThings" hidden>
-      <h2 class="group-head">First things first</h2>
-      <div class="habit-list" id="firstList"></div>
-    </div>
-
-    <div class="today-group" id="alsoToday" hidden>
-      <h2 class="group-head">Also today <span class="group-note">no pressure</span></h2>
-      <div class="habit-list" id="alsoList"></div>
-    </div>
-
-    <div class="today-group" id="doneToday" hidden>
-      <h2 class="group-head">Done <span class="group-note" id="doneCount"></span></h2>
-      <div class="habit-list" id="doneList"></div>
-    </div>
-
-    <div class="harvest" id="todayHarvest" hidden>
-      <div class="plant" id="todayPlant"></div>
-      <p class="harvest-day" id="todayHarvestDay">Day one</p>
-      <p class="harvest-line" id="todayHarvestLine">—</p>
-      <p class="harvest-note" id="todayHarvestNote"></p>
-    </div>
-
-    <div class="garden-wrap" id="gardenWrap" hidden>
-      <h2 class="group-head">The garden <span class="group-note">what today feeds</span></h2>
-      <div class="garden" id="garden"></div>
-    </div>
+    <div class="grove" id="grove"></div>
 
     <div class="suggest" id="suggest" hidden>
       <p class="suggest-head">Your decks aren't on the list yet</p>
       <div class="suggest-row" id="suggestRow"></div>
     </div>
-
-    <p class="empty" id="todayEmpty" hidden>No seeds planted yet. Add one and it shows up here every day.</p>
-    <button class="new-deck" id="newHabitBtn">
-      <span class="plus"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></span>
-      <span><strong>Plant a seed</strong><em>Small · Every day · End-goal focused · Done or not done</em></span>
-    </button>
   </section>
 
-  <!-- ───────────────── GOAL DETAIL ───────────────── -->
-  <section class="view" id="view-goal" data-view="goal">
-    <button class="back-link" id="goalBack">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg>All goals</button>
-
-    <div class="goal-detail">
-      <div class="goal-tree big" id="goalDetailTree"></div>
-      <div>
-        <h1 id="goalDetailName">Goal</h1>
-        <p class="goal-why" id="goalDetailWhy" hidden></p>
-        <p class="goal-line" id="goalDetailAim" hidden></p>
-        <p class="goal-tended" id="goalDetailTended">—</p>
-        <button class="btn ghost small" id="goalEdit">Edit goal</button>
-      </div>
-    </div>
-
-    <h2 class="group-head" id="goalSeedsHead">The seeds feeding it</h2>
-    <div class="progress-list" id="goalSeeds"></div>
-    <p class="empty" id="goalSeedsEmpty" hidden>No seeds pointed at this goal yet.</p>
-  </section>
 
   <!-- ───────────────── DECKS (Learn) ───────────────── -->
   <section class="view" id="view-decks" data-view="decks">

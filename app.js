@@ -192,13 +192,21 @@ function markHabit(id, on = true, day = dayKey()) {
 
 /* Linked habits check themselves off from work the app can actually see —
    no self-reporting where the truth is already known. */
+/* Count today's work from the cards themselves rather than a side counter.
+   The counter only started existing recently, so anything studied before it
+   shipped was invisible — and a counter can drift, while the cards cannot. */
+function reviewedInDeckToday(deckId, day = dayKey()) {
+  const fromCards = state.cards.filter((c) => c.deckId === deckId && c.lastReviewed === day).length;
+  const counter = (state.daily && state.daily.day === day && state.daily.decks && state.daily.decks[deckId]) || 0;
+  return Math.max(fromCards, counter);
+}
+
 function syncLinkedHabits() {
   const today = dayKey();
-  const perDeck = (state.daily && state.daily.day === today && state.daily.decks) || {};
   let changed = false;
   for (const h of liveHabits()) {
     if (!h.deckId) continue;
-    const done = perDeck[h.deckId] || 0;
+    const done = reviewedInDeckToday(h.deckId, today);
     if (done >= (h.amount || 1) && !didOn(state.log || {}, h.id, today)) {
       state.log = state.log || {};
       state.log[h.id] = state.log[h.id] || {};
@@ -322,7 +330,7 @@ const TABS = [
   { id: 'decks', label: 'Learn' },
 ];
 /* the deck world lives under Learn */
-const TAB_FOR_VIEW = { deck: 'decks', path: 'decks', study: 'decks', add: 'decks', browse: 'decks', goal: 'today', more: null };
+const TAB_FOR_VIEW = { deck: 'decks', path: 'decks', study: 'decks', add: 'decks', browse: 'decks', more: null };
 
 function buildTabs() {
   const html = TABS.map((t) => `<button data-go="${t.id}" aria-label="${t.label}"><svg viewBox="0 0 24 24" aria-hidden="true">${ICONS[t.id]}</svg><span>${t.label}</span></button>`).join('');
@@ -351,7 +359,6 @@ function go(view, opts = {}) {
   if (deck) { $('#deckPillName').textContent = deck.name; $('#deckPillDot').style.background = deck.color; }
 
   if (view === 'today') renderToday();
-  if (view === 'goal') renderGoal();
   if (view === 'decks') renderDecks();
   if (view === 'deck') renderDeck();
   if (view === 'path') renderPath();
@@ -388,6 +395,33 @@ function habitRow(h, state_) {
   </div>`;
 }
 
+function seedRow(h, log, today) {
+  const done = didOn(log, h.id, today);
+  const deck = h.deckId ? state.decks.find((d) => d.id === h.deckId) : null;
+  const need = requiredToday(h, log, today);
+  return `<div class="seed ${done ? 'done' : ''}" data-act="${h.id}">
+    <span class="tick"><svg viewBox="0 0 24 24"><path d="M4 12.5l5 5L20 6.5"/></svg></span>
+    <span class="seed-body">
+      <span class="seed-name">${esc(h.name)}${h.gate && need ? '<i class="gate-tag">first</i>' : ''}</span>
+      ${deck ? `<span class="seed-floor">${reviewedInDeckToday(deck.id)} of ${h.amount || 1} ${isText(deck) ? 'lines' : 'cards'} today</span>`
+             : (h.floor && !done ? `<span class="seed-floor">floor: ${esc(h.floor)}</span>` : '')}
+    </span>
+    ${deck ? '<span class="seed-go"><svg viewBox="0 0 24 24"><path d="M5 12h13M13 6l6 6-6 6"/></svg></span>' : ''}
+    <button class="seed-edit" data-edit="${h.id}" aria-label="Edit">
+      <svg viewBox="0 0 24 24"><path d="M4 20h4L18.5 9.5a2.1 2.1 0 0 0-3-3L5 17v3z"/></svg></button>
+  </div>`;
+}
+
+/* the last 30 days for a whole goal: a day counts if any of its seeds was done */
+function goalStrip(seeds, log, today) {
+  const cells = [];
+  for (let i = 29; i >= 0; i--) {
+    const k = PLAN.addDays(today, -i);
+    cells.push(`<i class="${seeds.some((h) => didOn(log, h.id, k)) ? 'on' : ''}" title="${k}"></i>`);
+  }
+  return `<div class="strip">${cells.join('')}</div>`;
+}
+
 function renderToday() {
   const today = dayKey();
   syncLinkedHabits();
@@ -396,51 +430,87 @@ function renderToday() {
   const log = state.log || {};
 
   $('#todayGreeting').textContent = greetingText();
-  const done = habits.filter((h) => didOn(log, h.id, today));
-  const first = habits.filter((h) => !didOn(log, h.id, today) && h.gate && requiredToday(h, log, today));
-  const also = habits.filter((h) => !didOn(log, h.id, today) && !first.includes(h) && availableToday(h, log, today));
-
   const blockers = gateBlockers(habits, log, today);
-  const anyGate = habits.some((h) => h.gate);
-  $('#todayLine').textContent = !habits.length ? 'Today'
+  const doneCount = habits.filter((h) => didOn(log, h.id, today)).length;
+
+  $('#todayLine').textContent = !habits.length ? 'Plant something'
     : blockers.length ? `${blockers.length} thing${blockers.length === 1 ? '' : 's'} before the good stuff`
-    : 'Go chud it out today, you earned it';
-  $('#todayLine').classList.toggle('done', habits.length > 0 && !blockers.length);
+    : doneCount ? 'Go chud it out today, you earned it'
+    : 'Nothing owed today';
+  $('#todayLine').classList.toggle('done', habits.length > 0 && !blockers.length && doneCount > 0);
 
   const gate = $('#gate');
-  gate.hidden = !anyGate;
+  gate.hidden = !habits.some((h) => h.gate);
   gate.classList.toggle('open', !blockers.length);
   $('#gateText').textContent = blockers.length
     ? `${blockers.map((h) => h.name).join(', ')} — then the gate opens`
     : 'The gate is open.';
 
-  /* the reward lands where the day actually ends */
-  const rewardBox = $('#todayHarvest');
-  if (!blockers.length && done.length) {
-    rewardBox.hidden = false;
-    const streak = liveStreak();
-    $('#todayPlant').innerHTML = plantSVG(streak);
-    $('#todayHarvestDay').textContent = streak > 1 ? `${streak} days in a row` : 'Day one';
-    $('#todayHarvestLine').textContent = `${done.length} of ${done.length + also.length} done today`;
-    const skipped = also.filter((h) => h.gate).length;
-    $('#todayHarvestNote').textContent = also.length
-      ? `${also.map((h) => h.name).join(', ')} still open — no pressure`
-      : 'Everything you set out to do.';
-  } else rewardBox.hidden = true;
+  const cards = (state.goals || []).map((g) => {
+    const seeds = habits.filter((h) => h.goalId === g.id);
+    const t = treeState(g);
+    const allDone = seeds.length && seeds.every((h) => didOn(log, h.id, today));
+    const tended = t.idle === null ? 'Not started'
+      : t.idle === 0 ? 'Tended today' : t.idle === 1 ? 'Tended yesterday'
+      : `Untended ${t.idle} days`;
+    return `<article class="tree-card ${allDone ? 'tended' : ''} ${t.health < 0.5 ? 'fading' : ''}">
+      <div class="tree-top" data-goal="${g.id}">
+        <div class="goal-tree">${treeSVG(t)}</div>
+        <div class="tree-meta">
+          <h2 class="tree-name">${esc(g.name)}</h2>
+          ${g.why ? `<p class="tree-why">${esc(g.why)}</p>` : ''}
+          <p class="tree-tended ${t.idle >= 2 ? 'warn' : ''}">${tended}${t.sessions ? ` · ${t.sessions} session${t.sessions === 1 ? '' : 's'}` : ''}${g.targetDate ? ` · aiming for ${humanDate(g.targetDate)}` : ''}</p>
+          ${goalStrip(seeds, log, today)}
+        </div>
+      </div>
+      <div class="seed-list">${seeds.length
+        ? seeds.map((h) => seedRow(h, log, today)).join('')
+        : '<p class="seed-empty">No seeds yet — plant one below and point it here.</p>'}</div>
+    </article>`;
+  });
 
-  renderGarden();
+  const loose = habits.filter((h) => !h.goalId);
+  if (loose.length) cards.push(`<article class="tree-card loose">
+      <div class="tree-top"><div class="tree-meta"><h2 class="tree-name">On their own</h2>
+      <p class="tree-tended">Not pointed at a goal</p></div></div>
+      <div class="seed-list">${loose.map((h) => seedRow(h, log, today)).join('')}</div>
+    </article>`);
 
-  $('#firstThings').hidden = !first.length;
-  $('#firstList').innerHTML = first.map(habitRow).join('');
-  $('#alsoToday').hidden = !also.length;
-  $('#alsoList').innerHTML = also.map(habitRow).join('');
-  $('#doneToday').hidden = !done.length;
-  $('#doneCount').textContent = `${done.length} today`;
-  $('#doneList').innerHTML = done.map(habitRow).join('');
-  $('#todayEmpty').hidden = habits.length > 0;
+  cards.push(`<div class="grove-actions">
+      <button class="new-deck" id="newHabitBtn">
+        <span class="plus"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></span>
+        <span><strong>Plant a seed</strong><em>Small · Every day · End-goal focused · Done or not done</em></span>
+      </button>
+      <button class="new-deck" id="newGoalBtn">
+        <span class="plus"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></span>
+        <span><strong>New goal</strong><em>Another tree to grow</em></span>
+      </button>
+    </div>`);
 
-  /* Decks with cards but no seed pointing at them: offer one tap rather than
-     making you fill in the form to say something the app already knows. */
+  $('#grove').innerHTML = cards.join('');
+
+  /* tap the row to do it; the pencil edits; the tree header edits the goal */
+  const act = (id) => {
+    const h = habitById(id); if (!h) return;
+    if (h.deckId) { state.activeDeck = h.deckId; save(); cameFrom = 'today'; go('study'); return; }
+    markHabit(id, !didOn(state.log || {}, id, dayKey()));
+    buzz(12); renderToday();
+  };
+  $$('#grove [data-act]').forEach((el) => el.addEventListener('click', (e) => {
+    if (e.target.closest('[data-edit]')) return;
+    act(el.dataset.act);
+  }));
+  $$('#grove [data-edit]').forEach((b) => b.addEventListener('click', (e) => {
+    e.stopPropagation(); openHabitSheet(b.dataset.edit);
+  }));
+  $$('#grove [data-goal]').forEach((el) => el.addEventListener('click', () => openGoalSheet(el.dataset.goal)));
+  $('#newHabitBtn').addEventListener('click', () => openHabitSheet(null));
+  $('#newGoalBtn').addEventListener('click', () => openGoalSheet(null));
+
+  renderDeckSuggestions(habits);
+}
+
+function renderDeckSuggestions(habits) {
   const unlinked = state.decks.filter((d) => deckCards(d.id).length && !habits.some((h) => h.deckId === d.id));
   $('#suggest').hidden = !unlinked.length;
   $('#suggestRow').innerHTML = unlinked.map((d) => `<button class="sugg" data-seed-deck="${d.id}">
@@ -452,44 +522,13 @@ function renderToday() {
     if (!deck) return;
     state.habits = state.habits || [];
     state.habits.push({
-      id: 'h-' + uid().slice(0, 8),
-      created: new Date().toISOString(),
-      name: deck.name,
-      floor: isText(deck) ? 'one line' : '5 cards',
-      cadence: 'daily',
-      goalId: null,
-      deckId: deck.id,
-      amount: isText(deck) ? 1 : state.settings.target,
-      gate: true,
+      id: 'h-' + uid().slice(0, 8), created: new Date().toISOString(),
+      name: deck.name, floor: isText(deck) ? 'one line' : '5 cards',
+      cadence: 'daily', goalId: (state.goals || [])[0]?.id || null, deckId: deck.id,
+      amount: isText(deck) ? 1 : state.settings.target, gate: true,
     });
     save(); buzz(14); renderToday();
-    toast(`${deck.name} added to today.`, 'good');
-  }));
-
-  $$('#view-today [data-tick]').forEach((b) => b.addEventListener('click', (e) => {
-    e.stopPropagation();
-    const id = b.dataset.tick;
-    const h = habitById(id);
-    if (h && h.deckId && !didOn(state.log || {}, id, today)) {
-      toast('This one checks itself off when you do the work.', 'bad');
-      return;
-    }
-    markHabit(id, !didOn(state.log || {}, id, today));
-    buzz(12); renderToday();
-  }));
-  /* the row does the thing; a pencil edits it */
-  const act = (id) => {
-    const h = habitById(id); if (!h) return;
-    if (h.deckId) { state.activeDeck = h.deckId; save(); cameFrom = 'today'; go('study'); return; }
-    markHabit(id, !didOn(state.log || {}, id, dayKey()));
-    buzz(12); renderToday();
-  };
-  $$('#view-today [data-act]').forEach((el) => {
-    el.addEventListener('click', () => act(el.dataset.act));
-    el.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); act(el.dataset.act); } });
-  });
-  $$('#view-today [data-edit]').forEach((b) => b.addEventListener('click', (e) => {
-    e.stopPropagation(); openHabitSheet(b.dataset.edit);
+    toast(`${deck.name} added.`, 'good');
   }));
 }
 
@@ -546,40 +585,6 @@ function treeSVG({ stage, health }) {
   </svg>`;
 }
 
-/* ── the garden: one tree per goal, right under the day's list ─── */
-function renderGarden() {
-  const goals = state.goals || [];
-  const loose = liveHabits().filter((h) => !h.goalId);
-  $('#gardenWrap').hidden = false;
-
-  const cards = goals.map((g) => {
-    const t = treeState(g);
-    const tended = t.idle === null ? 'Nothing planted yet'
-      : t.idle === 0 ? 'Tended today'
-      : t.idle === 1 ? 'Tended yesterday'
-      : `Untended ${t.idle} days`;
-    return `<button class="tree-card ${t.health < 0.5 ? 'fading' : ''}" data-goal="${g.id}">
-      <span class="goal-tree">${treeSVG(t)}</span>
-      <span class="tree-name">${esc(g.name)}</span>
-      <span class="tree-tended ${t.idle >= 2 ? 'warn' : ''}">${tended}</span>
-    </button>`;
-  });
-
-  if (loose.length) cards.push(`<button class="tree-card loose" data-goal="loose">
-      <span class="goal-tree">${treeSVG({ stage: Math.min(3, loose.length), health: 0.45 })}</span>
-      <span class="tree-name">On their own</span>
-      <span class="tree-tended">${loose.length} seed${loose.length === 1 ? '' : 's'}, no goal</span>
-    </button>`);
-
-  cards.push(`<button class="tree-card add" id="newGoalBtn">
-      <span class="tree-plus">+</span>
-      <span class="tree-name">New goal</span>
-      <span class="tree-tended">Where the seeds are taking you</span>
-    </button>`);
-
-  $('#garden').innerHTML = cards.join('');
-  $$('#garden [data-goal]').forEach((el) => el.addEventListener('click', () => openGoal(el.dataset.goal)));
-}
 
 /* ── progress, now shown inside a goal ─────────────────────────── */
 function progressCard(h) {
@@ -599,42 +604,6 @@ function progressCard(h) {
   </div>`;
 }
 
-let openGoalId = null;
-function openGoal(id) { openGoalId = id; go('goal'); }
-
-function renderGoal() {
-  const loose = openGoalId === 'loose';
-  const g = loose ? { id: 'loose', name: 'On their own', why: '' }
-                  : (state.goals || []).find((x) => x.id === openGoalId);
-  if (!g) return go('goals');
-
-  const mine = loose
-    ? liveHabits().filter((h) => !h.goalId)
-    : liveHabits().filter((h) => h.goalId === g.id);
-
-  const t = loose
-    ? { stage: Math.min(6, Math.max(0, mine.length)), health: 1, idle: 0, sessions: 0 }
-    : treeState(g);
-
-  $('#goalDetailTree').innerHTML = treeSVG(t);
-  $('#goalDetailName').textContent = g.name;
-  $('#goalDetailWhy').textContent = g.why || '';
-  $('#goalDetailWhy').hidden = !g.why;
-  $('#goalDetailAim').textContent = g.targetDate ? `Aiming for ${humanDate(g.targetDate)}` : '';
-  $('#goalDetailAim').hidden = !g.targetDate;
-  $('#goalEdit').hidden = loose;
-
-  const tended = loose ? `${mine.length} seed${mine.length === 1 ? '' : 's'} with no goal attached`
-    : t.idle === null ? 'Nothing planted here yet'
-    : t.idle === 0 ? 'Tended today' : t.idle === 1 ? 'Tended yesterday'
-    : `Untended for ${t.idle} days`;
-  const detail = $('#goalDetailTended');
-  detail.textContent = tended + (!loose && t.sessions ? ` · ${t.sessions} session${t.sessions === 1 ? '' : 's'} in the ground` : '');
-  detail.classList.toggle('warn', !loose && t.idle >= 2);
-
-  $('#goalSeedsEmpty').hidden = mine.length > 0;
-  $('#goalSeeds').innerHTML = mine.map(progressCard).join('');
-}
 
 /* ───────────────────────── decks view ───────────────────────── */
 function renderDecks() {
@@ -1794,8 +1763,6 @@ function openGoalSheet(id = null) {
 const closeGoalSheet = () => { $('#goalScrim').hidden = true; editingGoal = null; };
 
 function setupPlanner() {
-  $('#goalBack').addEventListener('click', () => go('today'));
-  $('#goalEdit').addEventListener('click', () => openGoalSheet(openGoalId));
   $('#newHabitBtn').addEventListener('click', () => openHabitSheet(null));
   /* #newGoalBtn is drawn by the garden each render, so it binds there */
   $('#hCancel').addEventListener('click', closeHabitSheet);
@@ -1845,7 +1812,7 @@ function setupPlanner() {
     if (editingGoal) Object.assign(state.goals.find((g) => g.id === editingGoal), fields);
     else state.goals.push({ id: 'g-' + uid().slice(0, 8), created: new Date().toISOString(), ...fields });
     save(); closeGoalSheet();
-    current === 'goal' ? renderGoal() : renderToday();
+    renderToday();
     toast(editingGoal ? 'Goal updated.' : 'Goal added.', 'good');
   });
   $('#gDelete').addEventListener('click', () => {

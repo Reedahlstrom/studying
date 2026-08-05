@@ -7,8 +7,10 @@ chrome.runtime.sendMessage({ type: 'get-state' }, (state) => {
   if (s) {
     const pct = Math.min(100, Math.round((s.reviewed / Math.max(1, s.target)) * 100));
     $('#bar').style.width = pct + '%';
+    const blockers = Array.isArray(s.blockers) ? s.blockers : [];
     $('#sub').textContent = open
-      ? `${s.reviewed} cards reviewed today.`
+      ? `${s.reviewed} reviewed today.`
+      : blockers.length ? `Waiting on: ${blockers.join(', ')}`
       : `${s.reviewed}/${s.target} done · ${s.remaining} to go`;
   } else {
     $('#sub').textContent = 'No report yet — open Learn Things Good once.';
