@@ -496,22 +496,85 @@ function renderToday() {
   }));
 }
 
+/* ── the goal tree ─────────────────────────────────────────────
+   Grows with the work put in, greys when left untended. It never
+   shrinks: you did those sessions, and losing them to a missed week
+   would be a lie. Colour comes back the day you tend it again. */
+const TREE_STEPS = [0, 3, 8, 16, 30, 55, 90];
+
+function treeState(goal) {
+  const mine = liveHabits().filter((h) => h.goalId === goal.id);
+  const log = state.log || {};
+  let last = null, sessions = 0;
+  for (const h of mine) {
+    for (const day of Object.keys(log[h.id] || {})) {
+      sessions++;
+      if (!last || day > last) last = day;
+    }
+  }
+  const idle = last ? Math.max(0, daysBetween(last, dayKey())) : null;
+  let stage = 0;
+  TREE_STEPS.forEach((t, i) => { if (sessions >= t) stage = i; });
+  /* full colour for a day off; fading from there; bare after a week */
+  const health = idle === null ? 0.35
+    : idle <= 1 ? 1 : idle === 2 ? 0.72 : idle === 3 ? 0.55
+    : idle === 4 ? 0.4 : idle <= 6 ? 0.25 : 0;
+  return { stage, sessions, idle, health, seeds: mine.length };
+}
+
+const CANOPY = [[0, -8, 21], [-19, 3, 16], [19, 3, 16], [-11, -21, 14],
+                [12, -21, 14], [0, 16, 15], [-27, -8, 12], [27, -8, 12]];
+
+function treeSVG({ stage, health }) {
+  const trunkTop = 128 - (32 + stage * 9);
+  const blobs = stage === 0 ? 0 : Math.min(CANOPY.length, stage + 1);
+  const parts = [];
+
+  if (stage >= 2) {
+    parts.push(`<path class="tree-branch" style="animation-delay:520ms" d="M60,${trunkTop + 34} C50,${trunkTop + 28} 42,${trunkTop + 22} 38,${trunkTop + 14}"/>`);
+    parts.push(`<path class="tree-branch" style="animation-delay:600ms" d="M60,${trunkTop + 42} C70,${trunkTop + 36} 78,${trunkTop + 30} 82,${trunkTop + 22}"/>`);
+  }
+  for (let i = 0; i < blobs; i++) {
+    const [dx, dy, r] = CANOPY[i];
+    parts.push(`<circle class="tree-leaf" style="animation-delay:${640 + i * 80}ms" cx="${60 + dx}" cy="${trunkTop + dy}" r="${r}"/>`);
+  }
+  if (stage === 0) {   /* just planted */
+    parts.push(`<path class="tree-leaf-sm" style="animation-delay:520ms" d="M60,${trunkTop} C48,${trunkTop - 7} 42,${trunkTop - 1} 42,${trunkTop + 7} C51,${trunkTop + 8} 57,${trunkTop + 4} 60,${trunkTop}"/>`);
+    parts.push(`<path class="tree-leaf-sm" style="animation-delay:600ms" d="M60,${trunkTop} C72,${trunkTop - 7} 78,${trunkTop - 1} 78,${trunkTop + 7} C69,${trunkTop + 8} 63,${trunkTop + 4} 60,${trunkTop}"/>`);
+  }
+  return `<svg viewBox="0 0 120 140" style="--health:${health}" aria-hidden="true">
+    <path class="ground" d="M22,132 H98"/>
+    <path class="tree-trunk" d="M60,132 C60,112 58,${trunkTop + 26} 60,${trunkTop}"/>
+    ${parts.join('')}
+  </svg>`;
+}
+
 /* ───────────────────────── goals ───────────────────────── */
 function renderGoals() {
   const goals = state.goals || [];
   $('#goalList').innerHTML = goals.map((g) => {
     const mine = liveHabits().filter((h) => h.goalId === g.id);
     const p = goalProgress(g, liveHabits(), state.log || {}, dayKey());
+    /* the tended line already carries the session count — don't say it twice */
     const line = p.kind === 'counted'
       ? `${p.done}/${p.total} ${esc(p.unit)} · ${p.daysLeft} days left · ${p.needPerDay}/day to make it${p.onPaceDate ? ` · at your pace: ${humanDate(p.onPaceDate)}` : ''}`
-      : `${p.sessions} session${p.sessions === 1 ? '' : 's'} logged${g.targetDate ? ` · aiming for ${humanDate(g.targetDate)}` : ''}`;
-    return `<div class="goal-card" data-goal="${g.id}">
-      <div class="goal-top"><span class="goal-name">${esc(g.name)}</span></div>
-      ${g.why ? `<p class="goal-why">${esc(g.why)}</p>` : ''}
-      <p class="goal-line">${line}</p>
-      <div class="goal-habits">${mine.length
-        ? mine.map((h) => `<span class="gh">${esc(h.name)}<em>${habitStats(h, state.log || {}, dayKey()).done}/30d</em></span>`).join('')
-        : '<span class="gh dim">No seeds yet — plant one and point it here.</span>'}</div>
+      : g.targetDate ? `Aiming for ${humanDate(g.targetDate)}` : '';
+    const t = treeState(g);
+    const tended = t.idle === null ? 'Nothing planted here yet'
+      : t.idle === 0 ? 'Tended today'
+      : t.idle === 1 ? 'Tended yesterday'
+      : `Untended for ${t.idle} days`;
+    return `<div class="goal-card ${t.health < 0.5 ? 'fading' : ''}" data-goal="${g.id}">
+      <div class="goal-tree">${treeSVG(t)}</div>
+      <div class="goal-body">
+        <div class="goal-top"><span class="goal-name">${esc(g.name)}</span></div>
+        ${g.why ? `<p class="goal-why">${esc(g.why)}</p>` : ''}
+        ${line ? `<p class="goal-line">${line}</p>` : ''}
+        <p class="goal-tended ${t.idle >= 2 ? 'warn' : ''}">${tended}${t.sessions ? ` · ${t.sessions} session${t.sessions === 1 ? '' : 's'} in the ground` : ''}</p>
+        <div class="goal-habits">${mine.length
+          ? mine.map((h) => `<span class="gh">${esc(h.name)}<em>${habitStats(h, state.log || {}, dayKey()).done}/30d</em></span>`).join('')
+          : '<span class="gh dim">No seeds yet — plant one and point it here.</span>'}</div>
+      </div>
     </div>`;
   }).join('');
   $$('#goalList [data-goal]').forEach((el) => el.addEventListener('click', () => openGoalSheet(el.dataset.goal)));

@@ -837,3 +837,40 @@ select { padding-right: 38px; cursor: pointer; }
 .habit-edit svg { width: 15px; height: 15px; }
 .habit-edit:hover { opacity: 1; background: var(--bg-elev-2); color: var(--text); }
 @media (max-width: 480px) { .habit-edit { width: 36px; height: 36px; opacity: .7; } }
+
+/* ══════════ the goal tree ══════════
+   Grows with the work, greys when untended. It never shrinks — the
+   sessions happened, and taking them back would be dishonest. */
+.goal-card { display: grid; grid-template-columns: 108px 1fr; gap: 16px; align-items: center; }
+.goal-tree { width: 108px; height: 126px; }
+.goal-tree svg { width: 100%; height: 100%; overflow: visible; }
+.goal-tree .ground {
+  stroke: var(--line); stroke-width: 2.5; stroke-linecap: round; fill: none;
+  stroke-dasharray: 76; stroke-dashoffset: 76; animation: grow .5s var(--ease) forwards;
+}
+.goal-tree .tree-trunk {
+  fill: none; stroke-width: 5; stroke-linecap: round;
+  stroke: color-mix(in srgb, #6b5433 calc(var(--health) * 100%), #a8a8a0);
+  stroke-dasharray: 130; stroke-dashoffset: 130;
+  animation: grow 1s var(--ease) .12s forwards;
+}
+.goal-tree .tree-branch {
+  fill: none; stroke-width: 3.2; stroke-linecap: round;
+  stroke: color-mix(in srgb, #6b5433 calc(var(--health) * 100%), #a8a8a0);
+  stroke-dasharray: 40; stroke-dashoffset: 40;
+  animation: grow .6s var(--ease) forwards;
+}
+.goal-tree .tree-leaf, .goal-tree .tree-leaf-sm {
+  fill: color-mix(in srgb, var(--olive) calc(var(--health) * 100%), #b6b6ae);
+  opacity: 0; transform-origin: 60px 60px;
+  animation: unfurl .6s var(--spring) forwards;
+}
+.goal-tree svg { transition: opacity .6s var(--ease); }
+.goal-card.fading .goal-tree svg { opacity: .8; }
+
+.goal-tended { font-size: 12px; color: var(--text-faint); margin-top: 6px; }
+.goal-tended.warn { color: var(--gold); }
+@media (max-width: 480px) {
+  .goal-card { grid-template-columns: 84px 1fr; gap: 12px; }
+  .goal-tree { width: 84px; height: 100px; }
+}
