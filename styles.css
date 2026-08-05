@@ -758,3 +758,46 @@ select { padding-right: 38px; cursor: pointer; }
 }
 [data-theme="dark"] .ltr { color: var(--olive); }
 .seeds-d { font-size: 12.5px; color: var(--text-dim); padding: 11px 13px; border-radius: var(--r-sm); background: var(--bg-elev-2); }
+
+/* ══════════ phone ══════════
+   Measured, not guessed: the four-way segmented control needs 382px and a
+   390px phone gives the content area 358, so it has to scroll rather than
+   crush its labels. */
+@media (max-width: 620px) {
+  .seg.wide { overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+  .seg.wide::-webkit-scrollbar { display: none; }
+  .seg.wide .seg-btn { flex: 0 0 auto; }
+  .seg.wide .seg-thumb { display: none; }
+  .seg.wide .seg-btn.on { background: var(--bg-elev); box-shadow: var(--shadow); }
+}
+
+@media (max-width: 480px) {
+  /* 30 tiny squares in one row is unreadable; two rows of 15 is legible */
+  .grid30 { grid-template-columns: repeat(15, 1fr); gap: 4px; }
+
+  /* thumb-sized targets */
+  .tick { width: 36px; height: 36px; }
+  .tick svg { width: 17px; height: 17px; }
+  .habit { gap: 12px; padding: 15px 14px; }
+  .habit-go { width: 38px; height: 38px; }
+
+  /* headline and reward breathe better with less chrome */
+  .harvest { padding: 26px 16px 28px; margin: 14px 0 18px; }
+  .plant { width: 92px; height: 116px; }
+  .stat-row { gap: 8px; }
+  .stat { padding: 13px 8px; }
+  .stat-num { font-size: 23px; }
+  .stat-label { font-size: 11px; }
+
+  /* sheets: give the content room and keep the actions reachable */
+  .modal { padding: 20px 16px calc(20px + var(--safe-b)); gap: 13px; }
+  .modal-actions { position: sticky; bottom: 0; padding-top: 10px; background: var(--bg-elev); }
+  .modal-actions .btn { flex: 1; justify-content: center; }
+  .modal-actions .spacer { display: none; }
+
+  /* study surfaces */
+  .face { padding: 26px 20px; }
+  .mem-text { padding: 22px 18px; }
+  .mem-actions .btn { padding: 15px; font-size: 15px; }
+  .done-actions .btn { flex: 1; }
+}
