@@ -426,6 +426,33 @@ function renderToday() {
   $('#doneList').innerHTML = done.map(habitRow).join('');
   $('#todayEmpty').hidden = habits.length > 0;
 
+  /* Decks with cards but no seed pointing at them: offer one tap rather than
+     making you fill in the form to say something the app already knows. */
+  const unlinked = state.decks.filter((d) => deckCards(d.id).length && !habits.some((h) => h.deckId === d.id));
+  $('#suggest').hidden = !unlinked.length;
+  $('#suggestRow').innerHTML = unlinked.map((d) => `<button class="sugg" data-seed-deck="${d.id}">
+      <span class="sugg-plus">+</span>
+      <span><b>${esc(d.name)}</b><em>${isText(d) ? 'a line a day' : `${state.settings.target} cards a day`}</em></span>
+    </button>`).join('');
+  $$('#suggestRow [data-seed-deck]').forEach((b) => b.addEventListener('click', () => {
+    const deck = state.decks.find((d) => d.id === b.dataset.seedDeck);
+    if (!deck) return;
+    state.habits = state.habits || [];
+    state.habits.push({
+      id: 'h-' + uid().slice(0, 8),
+      created: new Date().toISOString(),
+      name: deck.name,
+      floor: isText(deck) ? 'one line' : '5 cards',
+      cadence: 'daily',
+      goalId: null,
+      deckId: deck.id,
+      amount: isText(deck) ? 1 : state.settings.target,
+      gate: true,
+    });
+    save(); buzz(14); renderToday();
+    toast(`${deck.name} added to today.`, 'good');
+  }));
+
   $$('#view-today [data-tick]').forEach((b) => b.addEventListener('click', (e) => {
     e.stopPropagation();
     const id = b.dataset.tick;
