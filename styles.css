@@ -874,3 +874,51 @@ select { padding-right: 38px; cursor: pointer; }
   .goal-card { grid-template-columns: 84px 1fr; gap: 12px; }
   .goal-tree { width: 84px; height: 100px; }
 }
+
+/* ══════════ goal detail ══════════ */
+.back-link {
+  display: inline-flex; align-items: center; gap: 5px; margin: 14px 0 4px;
+  font-size: 13.5px; font-weight: 600; color: var(--text-dim); padding: 6px 10px 6px 4px; border-radius: 10px;
+  transition: color .2s var(--ease), background .2s;
+}
+.back-link svg { width: 16px; height: 16px; }
+.back-link:hover { color: var(--text); background: var(--bg-elev-2); }
+.goal-detail { display: grid; grid-template-columns: 150px 1fr; gap: 20px; align-items: center; margin: 6px 0 26px; }
+.goal-tree.big { width: 150px; height: 174px; }
+.goal-detail h1 { font-size: clamp(24px, 5.6vw, 32px); font-weight: 690; letter-spacing: -.025em; }
+.goal-detail .goal-why { margin-top: 5px; }
+.goal-detail .goal-line { margin-top: 8px; }
+.btn.small { padding: 8px 14px; font-size: 13.5px; border-radius: 11px; margin-top: 12px; }
+.goal-card.loose { grid-template-columns: 1fr; }
+@media (max-width: 480px) {
+  .goal-detail { grid-template-columns: 108px 1fr; gap: 14px; }
+  .goal-tree.big { width: 108px; height: 126px; }
+}
+
+/* ══════════ the garden ══════════ */
+.garden-wrap { margin-top: 30px; }
+.garden { display: grid; grid-template-columns: repeat(auto-fill, minmax(148px, 1fr)); gap: 11px; }
+.tree-card {
+  display: grid; justify-items: center; text-align: center; gap: 2px;
+  padding: 16px 12px 15px; border-radius: var(--r-lg);
+  background: var(--bg-elev); border: 1px solid var(--line-soft); box-shadow: var(--shadow);
+  animation: riseIn .4s var(--ease) both;
+  transition: transform .28s var(--spring), border-color .25s, box-shadow .3s;
+}
+.tree-card:hover { transform: translateY(-3px); box-shadow: var(--shadow-lg); border-color: var(--line); }
+.tree-card:active { transform: scale(.98); }
+.tree-card .goal-tree { width: 92px; height: 108px; }
+.tree-name { font-size: 14px; font-weight: 640; letter-spacing: -.01em; margin-top: 4px; }
+.tree-tended { font-size: 11.5px; color: var(--text-faint); }
+.tree-tended.warn { color: var(--gold); }
+.tree-card.add { border-style: dashed; background: transparent; justify-content: center; }
+.tree-card.add:hover { border-color: var(--olive); }
+.tree-plus {
+  display: grid; place-items: center; width: 44px; height: 44px; border-radius: 14px; margin: 22px 0 12px;
+  background: var(--olive-soft); color: var(--olive-deep); font-size: 24px; font-weight: 700; line-height: 1;
+}
+[data-theme="dark"] .tree-plus { color: var(--olive); }
+@media (max-width: 480px) {
+  .garden { grid-template-columns: 1fr 1fr; gap: 9px; }
+  .tree-card .goal-tree { width: 78px; height: 92px; }
+}

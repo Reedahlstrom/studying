@@ -310,9 +310,7 @@ const shuffle = (arr) => { const a = [...arr]; for (let i = a.length - 1; i > 0;
 
 /* ───────────────────────── navigation ───────────────────────── */
 const ICONS = {
-  today:  '<rect x="3" y="5" width="18" height="16" rx="3"/><path d="M8 3v4M16 3v4M8 13l2.5 2.5L16 10"/>',
-  goals:  '<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/>',
-  progress: '<path d="M4 19V5"/><path d="M4 15l5-5 4 4 7-7"/>',
+  today:  '<path d="M12 21V10"/><path d="M12 13c0-3.4 2.7-6.2 6.6-6.7 0 4-2.5 6.7-6.6 6.7z"/><path d="M12 17.5c0-2.7-2.1-4.9-5.3-5.3 0 3.2 2 5.3 5.3 5.3z"/>',
   decks:  '<path d="M4 7h16v13H4z"/><path d="M7 4h13v13"/>',
   path:   '<path d="M12 21V9"/><path d="M12 12c0-3 2.4-5.5 6-6 0 3.6-2.2 6-6 6z"/><path d="M12 16c0-2.4-1.9-4.4-4.8-4.8 0 2.9 1.8 4.8 4.8 4.8z"/>',
   study:  '<rect x="3" y="7" width="13" height="13" rx="3"/><path d="M8 4h9a3 3 0 0 1 3 3v9"/>',
@@ -320,13 +318,11 @@ const ICONS = {
   browse: '<path d="M4 6h16M4 12h16M4 18h11"/>',
 };
 const TABS = [
-  { id: 'today', label: 'Today' },
-  { id: 'goals', label: 'Goals' },
-  { id: 'progress', label: 'Progress' },
+  { id: 'today', label: 'Goals' },
   { id: 'decks', label: 'Learn' },
 ];
 /* the deck world lives under Learn */
-const TAB_FOR_VIEW = { deck: 'decks', path: 'decks', study: 'decks', add: 'decks', browse: 'decks', more: null };
+const TAB_FOR_VIEW = { deck: 'decks', path: 'decks', study: 'decks', add: 'decks', browse: 'decks', goal: 'today', more: null };
 
 function buildTabs() {
   const html = TABS.map((t) => `<button data-go="${t.id}" aria-label="${t.label}"><svg viewBox="0 0 24 24" aria-hidden="true">${ICONS[t.id]}</svg><span>${t.label}</span></button>`).join('');
@@ -355,8 +351,7 @@ function go(view, opts = {}) {
   if (deck) { $('#deckPillName').textContent = deck.name; $('#deckPillDot').style.background = deck.color; }
 
   if (view === 'today') renderToday();
-  if (view === 'goals') renderGoals();
-  if (view === 'progress') renderProgress();
+  if (view === 'goal') renderGoal();
   if (view === 'decks') renderDecks();
   if (view === 'deck') renderDeck();
   if (view === 'path') renderPath();
@@ -432,6 +427,8 @@ function renderToday() {
       ? `${also.map((h) => h.name).join(', ')} still open — no pressure`
       : 'Everything you set out to do.';
   } else rewardBox.hidden = true;
+
+  renderGarden();
 
   $('#firstThings').hidden = !first.length;
   $('#firstList').innerHTML = first.map(habitRow).join('');
@@ -549,58 +546,94 @@ function treeSVG({ stage, health }) {
   </svg>`;
 }
 
-/* ───────────────────────── goals ───────────────────────── */
-function renderGoals() {
+/* ── the garden: one tree per goal, right under the day's list ─── */
+function renderGarden() {
   const goals = state.goals || [];
-  $('#goalList').innerHTML = goals.map((g) => {
-    const mine = liveHabits().filter((h) => h.goalId === g.id);
-    const p = goalProgress(g, liveHabits(), state.log || {}, dayKey());
-    /* the tended line already carries the session count — don't say it twice */
-    const line = p.kind === 'counted'
-      ? `${p.done}/${p.total} ${esc(p.unit)} · ${p.daysLeft} days left · ${p.needPerDay}/day to make it${p.onPaceDate ? ` · at your pace: ${humanDate(p.onPaceDate)}` : ''}`
-      : g.targetDate ? `Aiming for ${humanDate(g.targetDate)}` : '';
+  const loose = liveHabits().filter((h) => !h.goalId);
+  $('#gardenWrap').hidden = false;
+
+  const cards = goals.map((g) => {
     const t = treeState(g);
-    const tended = t.idle === null ? 'Nothing planted here yet'
+    const tended = t.idle === null ? 'Nothing planted yet'
       : t.idle === 0 ? 'Tended today'
       : t.idle === 1 ? 'Tended yesterday'
-      : `Untended for ${t.idle} days`;
-    return `<div class="goal-card ${t.health < 0.5 ? 'fading' : ''}" data-goal="${g.id}">
-      <div class="goal-tree">${treeSVG(t)}</div>
-      <div class="goal-body">
-        <div class="goal-top"><span class="goal-name">${esc(g.name)}</span></div>
-        ${g.why ? `<p class="goal-why">${esc(g.why)}</p>` : ''}
-        ${line ? `<p class="goal-line">${line}</p>` : ''}
-        <p class="goal-tended ${t.idle >= 2 ? 'warn' : ''}">${tended}${t.sessions ? ` · ${t.sessions} session${t.sessions === 1 ? '' : 's'} in the ground` : ''}</p>
-        <div class="goal-habits">${mine.length
-          ? mine.map((h) => `<span class="gh">${esc(h.name)}<em>${habitStats(h, state.log || {}, dayKey()).done}/30d</em></span>`).join('')
-          : '<span class="gh dim">No seeds yet — plant one and point it here.</span>'}</div>
-      </div>
-    </div>`;
-  }).join('');
-  $$('#goalList [data-goal]').forEach((el) => el.addEventListener('click', () => openGoalSheet(el.dataset.goal)));
+      : `Untended ${t.idle} days`;
+    return `<button class="tree-card ${t.health < 0.5 ? 'fading' : ''}" data-goal="${g.id}">
+      <span class="goal-tree">${treeSVG(t)}</span>
+      <span class="tree-name">${esc(g.name)}</span>
+      <span class="tree-tended ${t.idle >= 2 ? 'warn' : ''}">${tended}</span>
+    </button>`;
+  });
+
+  if (loose.length) cards.push(`<button class="tree-card loose" data-goal="loose">
+      <span class="goal-tree">${treeSVG({ stage: Math.min(3, loose.length), health: 0.45 })}</span>
+      <span class="tree-name">On their own</span>
+      <span class="tree-tended">${loose.length} seed${loose.length === 1 ? '' : 's'}, no goal</span>
+    </button>`);
+
+  cards.push(`<button class="tree-card add" id="newGoalBtn">
+      <span class="tree-plus">+</span>
+      <span class="tree-name">New goal</span>
+      <span class="tree-tended">Where the seeds are taking you</span>
+    </button>`);
+
+  $('#garden').innerHTML = cards.join('');
+  $$('#garden [data-goal]').forEach((el) => el.addEventListener('click', () => openGoal(el.dataset.goal)));
 }
 
-/* ───────────────────────── progress ───────────────────────── */
-function renderProgress() {
-  const habits = liveHabits();
-  $('#progressEmpty').hidden = habits.length > 0;
-  $('#progressList').innerHTML = habits.map((h) => {
-    const st = habitStats(h, state.log || {}, dayKey(), 30);
-    const goal = (state.goals || []).find((g) => g.id === h.goalId);
-    return `<div class="prog">
-      <div class="prog-head">
-        <span class="prog-name">${esc(h.name)}</span>
-        <span class="prog-rate">${st.done} of the last 30 days</span>
-      </div>
-      ${goal ? `<p class="prog-goal">${esc(goal.name)}</p>` : ''}
-      <div class="grid30">${st.days.map((d) => `<i class="${d.done ? 'on' : ''}" title="${d.key}"></i>`).join('')}</div>
-      <div class="prog-foot">
-        <span><b>${st.thisWeek}/${st.target}</b> this week</span>
-        <span><b>${st.streak}</b> day run</span>
-        <span><b>${st.best}</b> best run</span>
-      </div>
-    </div>`;
-  }).join('');
+/* ── progress, now shown inside a goal ─────────────────────────── */
+function progressCard(h) {
+  const st = habitStats(h, state.log || {}, dayKey(), 30);
+  return `<div class="prog">
+    <div class="prog-head">
+      <span class="prog-name">${esc(h.name)}</span>
+      <span class="prog-rate">${st.done} of the last 30 days</span>
+    </div>
+    ${h.floor ? `<p class="prog-goal">floor: ${esc(h.floor)}</p>` : ''}
+    <div class="grid30">${st.days.map((d) => `<i class="${d.done ? 'on' : ''}" title="${d.key}"></i>`).join('')}</div>
+    <div class="prog-foot">
+      <span><b>${st.thisWeek}/${st.target}</b> this week</span>
+      <span><b>${st.streak}</b> day run</span>
+      <span><b>${st.best}</b> best run</span>
+    </div>
+  </div>`;
+}
+
+let openGoalId = null;
+function openGoal(id) { openGoalId = id; go('goal'); }
+
+function renderGoal() {
+  const loose = openGoalId === 'loose';
+  const g = loose ? { id: 'loose', name: 'On their own', why: '' }
+                  : (state.goals || []).find((x) => x.id === openGoalId);
+  if (!g) return go('goals');
+
+  const mine = loose
+    ? liveHabits().filter((h) => !h.goalId)
+    : liveHabits().filter((h) => h.goalId === g.id);
+
+  const t = loose
+    ? { stage: Math.min(6, Math.max(0, mine.length)), health: 1, idle: 0, sessions: 0 }
+    : treeState(g);
+
+  $('#goalDetailTree').innerHTML = treeSVG(t);
+  $('#goalDetailName').textContent = g.name;
+  $('#goalDetailWhy').textContent = g.why || '';
+  $('#goalDetailWhy').hidden = !g.why;
+  $('#goalDetailAim').textContent = g.targetDate ? `Aiming for ${humanDate(g.targetDate)}` : '';
+  $('#goalDetailAim').hidden = !g.targetDate;
+  $('#goalEdit').hidden = loose;
+
+  const tended = loose ? `${mine.length} seed${mine.length === 1 ? '' : 's'} with no goal attached`
+    : t.idle === null ? 'Nothing planted here yet'
+    : t.idle === 0 ? 'Tended today' : t.idle === 1 ? 'Tended yesterday'
+    : `Untended for ${t.idle} days`;
+  const detail = $('#goalDetailTended');
+  detail.textContent = tended + (!loose && t.sessions ? ` · ${t.sessions} session${t.sessions === 1 ? '' : 's'} in the ground` : '');
+  detail.classList.toggle('warn', !loose && t.idle >= 2);
+
+  $('#goalSeedsEmpty').hidden = mine.length > 0;
+  $('#goalSeeds').innerHTML = mine.map(progressCard).join('');
 }
 
 /* ───────────────────────── decks view ───────────────────────── */
@@ -1761,8 +1794,10 @@ function openGoalSheet(id = null) {
 const closeGoalSheet = () => { $('#goalScrim').hidden = true; editingGoal = null; };
 
 function setupPlanner() {
+  $('#goalBack').addEventListener('click', () => go('today'));
+  $('#goalEdit').addEventListener('click', () => openGoalSheet(openGoalId));
   $('#newHabitBtn').addEventListener('click', () => openHabitSheet(null));
-  $('#newGoalBtn').addEventListener('click', () => openGoalSheet(null));
+  /* #newGoalBtn is drawn by the garden each render, so it binds there */
   $('#hCancel').addEventListener('click', closeHabitSheet);
   $('#gCancel').addEventListener('click', closeGoalSheet);
   $('#habitScrim').addEventListener('click', (e) => { if (e.target === $('#habitScrim')) closeHabitSheet(); });
@@ -1809,14 +1844,15 @@ function setupPlanner() {
     state.goals = state.goals || [];
     if (editingGoal) Object.assign(state.goals.find((g) => g.id === editingGoal), fields);
     else state.goals.push({ id: 'g-' + uid().slice(0, 8), created: new Date().toISOString(), ...fields });
-    save(); closeGoalSheet(); renderGoals();
+    save(); closeGoalSheet();
+    current === 'goal' ? renderGoal() : renderToday();
     toast(editingGoal ? 'Goal updated.' : 'Goal added.', 'good');
   });
   $('#gDelete').addEventListener('click', () => {
     if (!confirm('Delete this goal? Its seeds stay, just unlinked.')) return;
     state.goals = (state.goals || []).filter((g) => g.id !== editingGoal);
     (state.habits || []).forEach((h) => { if (h.goalId === editingGoal) h.goalId = null; });
-    save(); closeGoalSheet(); renderGoals(); toast('Goal deleted.');
+    save(); closeGoalSheet(); go('today'); toast('Goal deleted.');
   });
 }
 
@@ -1959,17 +1995,23 @@ function seed() {
 }
 
 /* ───────────────────────── boot ───────────────────────── */
+/* A single missing element used to take the whole app down with it —
+   nothing rendered, no view active, no error visible. Wrap the wiring. */
+function safely(label, fn) {
+  try { fn(); } catch (e) { console.error(`[setup] ${label} failed:`, e); }
+}
+
 function boot() {
   applyTheme(state.settings.theme);
   buildTabs();
   seed();
   releaseDailyLines();
   publishStatus();
-  setupAdd();
-  setupBrowse();
-  setupModals();
-  setupPlanner();
-  setupSettings();
+  safely('setupAdd', setupAdd);
+  safely('setupBrowse', setupBrowse);
+  safely('setupModals', setupModals);
+  safely('setupPlanner', setupPlanner);
+  safely('setupSettings', setupSettings);
   setEngine('local');
 
   $('#themeToggle').addEventListener('click', () => {
@@ -2038,7 +2080,7 @@ function boot() {
   });
 
   const hash = location.hash.slice(1);
-  go(['today', 'goals', 'progress', 'decks', 'more'].includes(hash) ? hash : 'today');
+  go(['today', 'decks', 'more'].includes(hash) ? hash : 'today');
 
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));

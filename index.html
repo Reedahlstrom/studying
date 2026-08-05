@@ -71,6 +71,11 @@
       <p class="harvest-note" id="todayHarvestNote"></p>
     </div>
 
+    <div class="garden-wrap" id="gardenWrap" hidden>
+      <h2 class="group-head">The garden <span class="group-note">what today feeds</span></h2>
+      <div class="garden" id="garden"></div>
+    </div>
+
     <div class="suggest" id="suggest" hidden>
       <p class="suggest-head">Your decks aren't on the list yet</p>
       <div class="suggest-row" id="suggestRow"></div>
@@ -83,23 +88,25 @@
     </button>
   </section>
 
-  <!-- ───────────────── GOALS ───────────────── -->
-  <section class="view" id="view-goals" data-view="goals">
-    <div class="view-head"><h1>Goals</h1></div>
-    <p class="lede">What the seeds grow into. A date is a direction, not a deadline.</p>
-    <div class="goal-list" id="goalList"></div>
-    <button class="new-deck" id="newGoalBtn">
-      <span class="plus"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></span>
-      <span><strong>New goal</strong><em>Where the seeds are taking you</em></span>
-    </button>
-  </section>
+  <!-- ───────────────── GOAL DETAIL ───────────────── -->
+  <section class="view" id="view-goal" data-view="goal">
+    <button class="back-link" id="goalBack">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg>All goals</button>
 
-  <!-- ───────────────── PROGRESS ───────────────── -->
-  <section class="view" id="view-progress" data-view="progress">
-    <div class="view-head"><h1>Progress</h1></div>
-    <p class="lede">What actually happened. Plain counts, no grading.</p>
-    <div class="progress-list" id="progressList"></div>
-    <p class="empty" id="progressEmpty" hidden>Nothing tracked yet.</p>
+    <div class="goal-detail">
+      <div class="goal-tree big" id="goalDetailTree"></div>
+      <div>
+        <h1 id="goalDetailName">Goal</h1>
+        <p class="goal-why" id="goalDetailWhy" hidden></p>
+        <p class="goal-line" id="goalDetailAim" hidden></p>
+        <p class="goal-tended" id="goalDetailTended">—</p>
+        <button class="btn ghost small" id="goalEdit">Edit goal</button>
+      </div>
+    </div>
+
+    <h2 class="group-head" id="goalSeedsHead">The seeds feeding it</h2>
+    <div class="progress-list" id="goalSeeds"></div>
+    <p class="empty" id="goalSeedsEmpty" hidden>No seeds pointed at this goal yet.</p>
   </section>
 
   <!-- ───────────────── DECKS (Learn) ───────────────── -->
