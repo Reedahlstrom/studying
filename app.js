@@ -938,9 +938,19 @@ function startSession(filter = null, studyAhead = false) {
   if (!due.length && (studyAhead || filter)) due = pool.filter((c) => !c.mastered && (!c.passageId || c.intro));
 
   /* passages are learned in order — shuffling a poem is nonsense */
+  /* Order matters. Picking at random from everything due let 400 Box 1 cards
+     crowd out the handful genuinely scheduled for tonight, so a card timed for
+     day 8 might not resurface for weeks — which defeats the whole point.
+     Scheduled reviews come first, then cards you have lapsed on, then new
+     material fills whatever is left. */
+  const overdueBy = (c) => (c.lastReviewed ? daysBetween(c.lastReviewed, today) - INTERVALS[c.box] : 0);
+  const scheduled = due.filter((c) => c.box >= 2).sort((a, b) => overdueBy(b) - overdueBy(a));
+  const lapsed = shuffle(due.filter((c) => c.box < 2 && c.lastReviewed));
+  const fresh = shuffle(due.filter((c) => c.box < 2 && !c.lastReviewed));
+
   const queue = isText(deck)
     ? due.sort((a, b) => (a.passageId === b.passageId ? a.order - b.order : String(a.passageId).localeCompare(String(b.passageId))))
-    : shuffle(due).slice(0, state.settings.target);
+    : [...scheduled, ...lapsed, ...fresh].slice(0, state.settings.target);
   session = { queue: isText(deck) ? queue : queue, i: 0, right: 0, wrong: 0, revealed: false, requeued: new Set(), filter, text: isText(deck) };
   $('#sessionDone').hidden = true;
   $('#stage').hidden = session.text;
