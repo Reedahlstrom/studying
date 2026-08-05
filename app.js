@@ -350,7 +350,8 @@ function go(view, opts = {}) {
   window.scrollTo({ top: 0, behavior: 'auto' });
 
   const deck = activeDeck();
-  $('#deckPill').hidden = !deck || view === 'decks';
+  const deckContext = ['deck', 'path', 'study', 'add', 'browse'].includes(view);
+  $('#deckPill').hidden = !deck || !deckContext;
   if (deck) { $('#deckPillName').textContent = deck.name; $('#deckPillDot').style.background = deck.color; }
 
   if (view === 'today') renderToday();
@@ -381,13 +382,14 @@ function habitRow(h, state_) {
     <button class="tick" data-tick="${h.id}" aria-label="${done ? 'Undo' : 'Mark done'}">
       <svg viewBox="0 0 24 24"><path d="M4 12.5l5 5L20 6.5"/></svg>
     </button>
-    <div class="habit-main" data-open="${h.id}">
+    <div class="habit-main" data-act="${h.id}" role="button" tabindex="0">
       <div class="habit-name">${esc(h.name)}${h.gate ? '<span class="gate-tag">gate</span>' : ''}</div>
       ${h.floor && !done ? `<div class="habit-floor">floor: ${esc(h.floor)}</div>` : ''}
       <div class="habit-meta">${weekDots(h)}<span>${st.thisWeek}/${st.target} this week</span>${st.streak > 1 ? `<span>· ${st.streak} day run</span>` : ''}</div>
     </div>
-    ${deck ? `<button class="habit-go" data-godeck="${deck.id}" aria-label="Open ${esc(deck.name)}">
-      <svg viewBox="0 0 24 24"><path d="M5 12h13M13 6l6 6-6 6"/></svg></button>` : ''}
+    ${deck ? `<span class="habit-go" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 12h13M13 6l6 6-6 6"/></svg></span>` : ''}
+    <button class="habit-edit" data-edit="${h.id}" aria-label="Edit ${esc(h.name)}">
+      <svg viewBox="0 0 24 24"><path d="M4 20h4L18.5 9.5a2.1 2.1 0 0 0-3-3L5 17v3z"/></svg></button>
   </div>`;
 }
 
@@ -416,6 +418,20 @@ function renderToday() {
   $('#gateText').textContent = blockers.length
     ? `${blockers.map((h) => h.name).join(', ')} — then the gate opens`
     : 'The gate is open.';
+
+  /* the reward lands where the day actually ends */
+  const rewardBox = $('#todayHarvest');
+  if (!blockers.length && done.length) {
+    rewardBox.hidden = false;
+    const streak = liveStreak();
+    $('#todayPlant').innerHTML = plantSVG(streak);
+    $('#todayHarvestDay').textContent = streak > 1 ? `${streak} days in a row` : 'Day one';
+    $('#todayHarvestLine').textContent = `${done.length} of ${done.length + also.length} done today`;
+    const skipped = also.filter((h) => h.gate).length;
+    $('#todayHarvestNote').textContent = also.length
+      ? `${also.map((h) => h.name).join(', ')} still open — no pressure`
+      : 'Everything you set out to do.';
+  } else rewardBox.hidden = true;
 
   $('#firstThings').hidden = !first.length;
   $('#firstList').innerHTML = first.map(habitRow).join('');
@@ -464,12 +480,19 @@ function renderToday() {
     markHabit(id, !didOn(state.log || {}, id, today));
     buzz(12); renderToday();
   }));
-  $$('#view-today [data-open]').forEach((el) => el.addEventListener('click', () => openHabitSheet(el.dataset.open)));
-  /* straight into the work — the whole point of putting it on Today */
-  $$('#view-today [data-godeck]').forEach((b) => b.addEventListener('click', (e) => {
-    e.stopPropagation();
-    state.activeDeck = b.dataset.godeck; save();
-    go('study');
+  /* the row does the thing; a pencil edits it */
+  const act = (id) => {
+    const h = habitById(id); if (!h) return;
+    if (h.deckId) { state.activeDeck = h.deckId; save(); cameFrom = 'today'; go('study'); return; }
+    markHabit(id, !didOn(state.log || {}, id, dayKey()));
+    buzz(12); renderToday();
+  };
+  $$('#view-today [data-act]').forEach((el) => {
+    el.addEventListener('click', () => act(el.dataset.act));
+    el.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); act(el.dataset.act); } });
+  });
+  $$('#view-today [data-edit]').forEach((b) => b.addEventListener('click', (e) => {
+    e.stopPropagation(); openHabitSheet(b.dataset.edit);
   }));
 }
 
@@ -530,7 +553,7 @@ function renderDecks() {
   $('.due-count').classList.toggle('done', finished);
   $('#dueBig').textContent = finished ? '' : leftTonight;
   $('#dueWord').textContent = finished
-    ? 'Go chud it out today, you earned it'
+    ? 'All caught up'
     : leftTonight === 1 ? 'card due today' : 'cards due today';
   $('#greeting').textContent = greetingText();
   $('#heroSub').textContent = state.decks.length > 1 ? `across ${state.decks.length} decks` : 'ready when you are';
@@ -836,6 +859,7 @@ const closeNode = () => { $('#nodeScrim').hidden = true; };
 /* ───────────────────────── session ───────────────────────── */
 let session = null;
 
+let cameFrom = 'deck';
 function startSession(filter = null, studyAhead = false) {
   const deck = activeDeck(); if (!deck) return;
   const today = dayKey();
@@ -1893,9 +1917,10 @@ function boot() {
   $('#brandBtn').addEventListener('click', () => go('today'));
   $('#deckPill').addEventListener('click', () => go('decks'));
   $('#deckTitle').addEventListener('click', () => openDeckSheet(state.activeDeck));
-  $$('.quick[data-go]').forEach((b) => b.addEventListener('click', () => go(b.dataset.go)));
+  $$('.quick[data-go]').forEach((b) => b.addEventListener('click', () => { cameFrom = 'deck'; go(b.dataset.go); }));
 
   $('#deckStart').addEventListener('click', () => {
+    cameFrom = 'deck';
     const action = $('#deckStart').dataset.action;
     if (action === 'add') return go('add');
     if (action === 'ahead') { go('study', { keepSession: true }); startSession(null, true); return; }
@@ -1914,8 +1939,9 @@ function boot() {
   fc.addEventListener('keydown', (e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); reveal(); } });
   $('#gotBtn').addEventListener('click', () => answer(true));
   $('#missBtn').addEventListener('click', () => answer(false));
-  $('#endSession').addEventListener('click', () => go('deck'));
-  $('#doneHome').addEventListener('click', () => go('deck'));
+  /* go back where you came from, not always to the deck page */
+  $('#endSession').addEventListener('click', () => go(cameFrom));
+  $('#doneHome').addEventListener('click', () => go(cameFrom));
   $('#doneAgain').addEventListener('click', () => startSession(session ? session.filter : null));
 
   let sx = 0, sy = 0, tracking = false;
