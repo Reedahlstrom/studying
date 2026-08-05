@@ -922,3 +922,21 @@ select { padding-right: 38px; cursor: pointer; }
   .garden { grid-template-columns: 1fr 1fr; gap: 9px; }
   .tree-card .goal-tree { width: 78px; height: 92px; }
 }
+
+/* ══════════ start-up failure ══════════ */
+.boot-fail {
+  position: fixed; inset: 0; z-index: 200; display: grid; place-content: center; gap: 12px;
+  padding: 40px 24px; text-align: center; background: var(--bg); color: var(--text);
+}
+.boot-fail h1 { font-size: 24px; font-weight: 690; }
+.boot-fail p { color: var(--text-dim); font-size: 14.5px; }
+.boot-fail pre {
+  font: 12px/1.5 ui-monospace, monospace; color: var(--text-faint);
+  background: var(--bg-elev-2); padding: 12px 14px; border-radius: 12px;
+  max-width: 460px; overflow-x: auto; white-space: pre-wrap; margin: 4px auto;
+}
+.boot-fail button {
+  justify-self: center; margin-top: 8px; padding: 13px 22px; border-radius: 14px;
+  font-size: 15px; font-weight: 620; color: #fff;
+  background: linear-gradient(168deg, var(--olive), var(--olive-deep));
+}

@@ -2002,6 +2002,12 @@ function safely(label, fn) {
 }
 
 function boot() {
+  /* Register before anything that can throw. This used to sit at the end of
+     boot, so a setup error stopped the worker updating and a broken build
+     could persist across reloads. */
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('sw.js').catch(() => {});
+  }
   applyTheme(state.settings.theme);
   buildTabs();
   seed();
@@ -2082,9 +2088,28 @@ function boot() {
   const hash = location.hash.slice(1);
   go(['today', 'decks', 'more'].includes(hash) ? hash : 'today');
 
-  if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
-  }
 }
 
-boot();
+/* Last line of defence: if boot dies anyway, say so and offer a way out
+   instead of leaving a white screen with no explanation. */
+try {
+  boot();
+} catch (err) {
+  console.error('boot failed:', err);
+  document.body.insertAdjacentHTML('afterbegin', `
+    <div class="boot-fail">
+      <h1>Something broke on start-up</h1>
+      <p>Your data is safe — this is a display problem, not a data one.</p>
+      <pre>${String(err && err.message || err).replace(/[<>&]/g, '')}</pre>
+      <button id="bootReload">Reload a fresh copy</button>
+    </div>`);
+  document.getElementById('bootReload').addEventListener('click', async () => {
+    try {
+      const regs = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(regs.map((r) => r.unregister()));
+      const keys = await caches.keys();
+      await Promise.all(keys.map((k) => caches.delete(k)));
+    } catch (_) { /* best effort */ }
+    location.reload();
+  });
+}
