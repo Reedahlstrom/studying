@@ -592,6 +592,7 @@ function showCard() {
   $('#cardCat').textContent = label;
   $('#cardCat').hidden = !label;
   $('#cardBox').textContent = `Box ${card.box}`;
+  $('.tap-hint').textContent = 'tap to reveal';
   const total = session.queue.length;
   $('#progressText').textContent = `${session.i + 1} / ${total}`;
   $('#progressFill').style.width = `${(session.i / total) * 100}%`;
@@ -685,12 +686,22 @@ function bumpDaily() {
   save();
 }
 
+/* First tap reveals; every tap after that flips between question and answer.
+   `revealed` stays true once set — you have seen it, so the grading buttons
+   remain live even while you are looking at the question again. */
 function reveal() {
-  if (!session || session.revealed) return;
-  session.revealed = true;
-  $('#flashcard').classList.add('flipped');
-  $('#answerRow').classList.add('on');
-  buzz(8);
+  if (!session) return;
+  const fc = $('#flashcard');
+  if (!session.revealed) {
+    session.revealed = true;
+    fc.classList.add('flipped');
+    $('#answerRow').classList.add('on');
+    $('.tap-hint').textContent = 'tap to flip back';
+    buzz(8);
+  } else {
+    fc.classList.toggle('flipped');
+    buzz(5);
+  }
 }
 
 function answer(correct) {
@@ -1529,6 +1540,7 @@ function boot() {
     if (tag === 'TEXTAREA' || tag === 'INPUT' || tag === 'SELECT') return;
     if (!session.revealed && (e.key === ' ' || e.key === 'Enter')) { e.preventDefault(); reveal(); }
     else if (session.revealed) {
+      if (e.key === 'f' || e.key === 'F') { e.preventDefault(); reveal(); }        // flip back and forth
       if (e.key === '1' || e.key === 'ArrowLeft') { e.preventDefault(); answer(false); }
       if (e.key === '2' || e.key === 'ArrowRight' || e.key === ' ' || e.key === 'Enter') { e.preventDefault(); answer(true); }
     }
