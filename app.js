@@ -4,6 +4,8 @@
    ══════════════════════════════════════════════════════════════ */
 import { PHASES, PRINCIPLES, CURRICULUM_CARDS } from './curriculum.js';
 import { AMBITION, chunkText, firstLetters, gradeTyping, estimateAll, wordsIn } from './passages.js';
+import * as PLAN from './planner.js';
+import { CADENCE, perWeekOf, requiredToday, availableToday, gateBlockers, gateOpen, didOn, stats as habitStats, goalProgress } from './planner.js';
 
 const STORE_KEY = 'ledger.v2';
 const LEGACY_KEY = 'ledger.v1';
@@ -25,6 +27,7 @@ const daysBetween = (a, b) => Math.round((keyToDate(b) - keyToDate(a)) / 8640000
 /* ───────────────────────── state ───────────────────────── */
 const defaultState = () => ({
   decks: [], cards: [], passages: [], activeDeck: null,
+  habits: [], goals: [], log: {},
   settings: { target: 15, theme: 'light', requeue: false, apiKey: '' },
   streak: { count: 0, last: null },
   daily: { day: null, count: 0 },
@@ -44,17 +47,25 @@ function todayCount() {
 
 function publishStatus() {
   const today = dayKey();
+  syncLinkedHabits();
+  const habits = (state.habits || []).filter((h) => !h.archived);
+  const blockers = gateBlockers(habits, state.log || {}, today);
+
+  /* With no gate habits at all, fall back to the flashcard target so the
+     blocker keeps working for anyone who has not set habits up yet. */
+  const anyGate = habits.some((h) => h.gate);
   const due = state.cards.filter((c) => isDue(c, today)).length;
   const reviewed = todayCount();
   const target = state.settings.target;
+  const done = anyGate ? blockers.length === 0 : (due === 0 || reviewed >= target);
+
   try {
     localStorage.setItem(STATUS_KEY, JSON.stringify({
       day: today,
-      due,
-      reviewed,
-      target,
-      remaining: Math.max(0, Math.min(due, target - reviewed)),
-      done: due === 0 || reviewed >= target,
+      due, reviewed, target,
+      remaining: anyGate ? blockers.length : Math.max(0, Math.min(due, target - reviewed)),
+      blockers: blockers.map((h) => h.name),
+      done,
       updated: new Date().toISOString(),
     }));
   } catch (_) { /* storage full — the gate simply stays shut */ }
@@ -82,6 +93,9 @@ function hydrate(parsed) {
   s.decks = Array.isArray(parsed.decks) ? parsed.decks : [];
   s.cards = Array.isArray(parsed.cards) ? parsed.cards.map(normalizeCard) : [];
   s.passages = Array.isArray(parsed.passages) ? parsed.passages : [];
+  s.habits = Array.isArray(parsed.habits) ? parsed.habits : [];
+  s.goals = Array.isArray(parsed.goals) ? parsed.goals : [];
+  s.log = parsed.log && typeof parsed.log === 'object' ? parsed.log : {};
   return s;
 }
 
@@ -162,6 +176,38 @@ const deckCards = (id = state.activeDeck) => state.cards.filter((c) => c.deckId 
 const activeDeck = () => state.decks.find((d) => d.id === state.activeDeck) || null;
 const isCurriculum = (deck) => deck && deck.kind === 'curriculum';
 const isText = (deck) => deck && deck.kind === 'text';
+
+/* ══════════════════════════════════════════════════════════════
+   Habits — the daily list. Kaizen: something small every day.
+   ══════════════════════════════════════════════════════════════ */
+const liveHabits = () => (state.habits || []).filter((h) => !h.archived);
+const habitById = (id) => (state.habits || []).find((h) => h.id === id);
+
+function markHabit(id, on = true, day = dayKey()) {
+  state.log = state.log || {};
+  state.log[id] = state.log[id] || {};
+  if (on) state.log[id][day] = true; else delete state.log[id][day];
+  save();
+}
+
+/* Linked habits check themselves off from work the app can actually see —
+   no self-reporting where the truth is already known. */
+function syncLinkedHabits() {
+  const today = dayKey();
+  const perDeck = (state.daily && state.daily.day === today && state.daily.decks) || {};
+  let changed = false;
+  for (const h of liveHabits()) {
+    if (!h.deckId) continue;
+    const done = perDeck[h.deckId] || 0;
+    if (done >= (h.amount || 1) && !didOn(state.log || {}, h.id, today)) {
+      state.log = state.log || {};
+      state.log[h.id] = state.log[h.id] || {};
+      state.log[h.id][today] = true;
+      changed = true;
+    }
+  }
+  return changed;
+}
 
 /* ── passages ───────────────────────────────────────────────────
    A chunk of text is a card with a different ritual: read it, recall
@@ -264,6 +310,9 @@ const shuffle = (arr) => { const a = [...arr]; for (let i = a.length - 1; i > 0;
 
 /* ───────────────────────── navigation ───────────────────────── */
 const ICONS = {
+  today:  '<rect x="3" y="5" width="18" height="16" rx="3"/><path d="M8 3v4M16 3v4M8 13l2.5 2.5L16 10"/>',
+  goals:  '<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/>',
+  progress: '<path d="M4 19V5"/><path d="M4 15l5-5 4 4 7-7"/>',
   decks:  '<path d="M4 7h16v13H4z"/><path d="M7 4h13v13"/>',
   path:   '<path d="M12 21V9"/><path d="M12 12c0-3 2.4-5.5 6-6 0 3.6-2.2 6-6 6z"/><path d="M12 16c0-2.4-1.9-4.4-4.8-4.8 0 2.9 1.8 4.8 4.8 4.8z"/>',
   study:  '<rect x="3" y="7" width="13" height="13" rx="3"/><path d="M8 4h9a3 3 0 0 1 3 3v9"/>',
@@ -271,13 +320,13 @@ const ICONS = {
   browse: '<path d="M4 6h16M4 12h16M4 18h11"/>',
 };
 const TABS = [
-  { id: 'decks', label: 'Decks' },
-  { id: 'path', label: 'Path' },
-  { id: 'study', label: 'Study' },
-  { id: 'add', label: 'Add' },
-  { id: 'browse', label: 'Cards' },
+  { id: 'today', label: 'Today' },
+  { id: 'goals', label: 'Goals' },
+  { id: 'progress', label: 'Progress' },
+  { id: 'decks', label: 'Learn' },
 ];
-const TAB_FOR_VIEW = { deck: 'decks', more: null };
+/* the deck world lives under Learn */
+const TAB_FOR_VIEW = { deck: 'decks', path: 'decks', study: 'decks', add: 'decks', browse: 'decks', more: null };
 
 function buildTabs() {
   const html = TABS.map((t) => `<button data-go="${t.id}" aria-label="${t.label}"><svg viewBox="0 0 24 24" aria-hidden="true">${ICONS[t.id]}</svg><span>${t.label}</span></button>`).join('');
@@ -304,6 +353,9 @@ function go(view, opts = {}) {
   $('#deckPill').hidden = !deck || view === 'decks';
   if (deck) { $('#deckPillName').textContent = deck.name; $('#deckPillDot').style.background = deck.color; }
 
+  if (view === 'today') renderToday();
+  if (view === 'goals') renderGoals();
+  if (view === 'progress') renderProgress();
   if (view === 'decks') renderDecks();
   if (view === 'deck') renderDeck();
   if (view === 'path') renderPath();
@@ -313,6 +365,130 @@ function go(view, opts = {}) {
 }
 
 function openDeck(id) { state.activeDeck = id; save(); go('deck'); }
+
+/* ───────────────────────── today ───────────────────────── */
+const weekDots = (h) => {
+  const st = habitStats(h, state.log || {}, dayKey(), 7);
+  return `<span class="dots">${st.days.map((d) => `<i class="${d.done ? 'on' : ''}"></i>`).join('')}</span>`;
+};
+
+function habitRow(h, state_) {
+  const today = dayKey();
+  const done = didOn(state.log || {}, h.id, today);
+  const st = habitStats(h, state.log || {}, today, 7);
+  const deck = h.deckId ? state.decks.find((d) => d.id === h.deckId) : null;
+  return `<div class="habit ${done ? 'done' : ''} ${h.gate ? 'gated' : ''}" data-habit="${h.id}">
+    <button class="tick" data-tick="${h.id}" aria-label="${done ? 'Undo' : 'Mark done'}">
+      <svg viewBox="0 0 24 24"><path d="M4 12.5l5 5L20 6.5"/></svg>
+    </button>
+    <div class="habit-main" data-open="${h.id}">
+      <div class="habit-name">${esc(h.name)}${h.gate ? '<span class="gate-tag">gate</span>' : ''}</div>
+      ${h.floor && !done ? `<div class="habit-floor">floor: ${esc(h.floor)}</div>` : ''}
+      <div class="habit-meta">${weekDots(h)}<span>${st.thisWeek}/${st.target} this week</span>${st.streak > 1 ? `<span>· ${st.streak} day run</span>` : ''}</div>
+    </div>
+    ${deck ? `<button class="habit-go" data-godeck="${deck.id}" aria-label="Open ${esc(deck.name)}">
+      <svg viewBox="0 0 24 24"><path d="M5 12h13M13 6l6 6-6 6"/></svg></button>` : ''}
+  </div>`;
+}
+
+function renderToday() {
+  const today = dayKey();
+  syncLinkedHabits();
+  releaseDailyLines();
+  const habits = liveHabits();
+  const log = state.log || {};
+
+  $('#todayGreeting').textContent = greetingText();
+  const done = habits.filter((h) => didOn(log, h.id, today));
+  const first = habits.filter((h) => !didOn(log, h.id, today) && h.gate && requiredToday(h, log, today));
+  const also = habits.filter((h) => !didOn(log, h.id, today) && !first.includes(h) && availableToday(h, log, today));
+
+  const blockers = gateBlockers(habits, log, today);
+  const anyGate = habits.some((h) => h.gate);
+  $('#todayLine').textContent = !habits.length ? 'Today'
+    : blockers.length ? `${blockers.length} thing${blockers.length === 1 ? '' : 's'} before the good stuff`
+    : 'Go chud it out today, you earned it';
+  $('#todayLine').classList.toggle('done', habits.length > 0 && !blockers.length);
+
+  const gate = $('#gate');
+  gate.hidden = !anyGate;
+  gate.classList.toggle('open', !blockers.length);
+  $('#gateText').textContent = blockers.length
+    ? `${blockers.map((h) => h.name).join(', ')} — then the gate opens`
+    : 'The gate is open.';
+
+  $('#firstThings').hidden = !first.length;
+  $('#firstList').innerHTML = first.map(habitRow).join('');
+  $('#alsoToday').hidden = !also.length;
+  $('#alsoList').innerHTML = also.map(habitRow).join('');
+  $('#doneToday').hidden = !done.length;
+  $('#doneCount').textContent = `${done.length} today`;
+  $('#doneList').innerHTML = done.map(habitRow).join('');
+  $('#todayEmpty').hidden = habits.length > 0;
+
+  $$('#view-today [data-tick]').forEach((b) => b.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const id = b.dataset.tick;
+    const h = habitById(id);
+    if (h && h.deckId && !didOn(state.log || {}, id, today)) {
+      toast('This one checks itself off when you do the work.', 'bad');
+      return;
+    }
+    markHabit(id, !didOn(state.log || {}, id, today));
+    buzz(12); renderToday();
+  }));
+  $$('#view-today [data-open]').forEach((el) => el.addEventListener('click', () => openHabitSheet(el.dataset.open)));
+  /* straight into the work — the whole point of putting it on Today */
+  $$('#view-today [data-godeck]').forEach((b) => b.addEventListener('click', (e) => {
+    e.stopPropagation();
+    state.activeDeck = b.dataset.godeck; save();
+    go('study');
+  }));
+}
+
+/* ───────────────────────── goals ───────────────────────── */
+function renderGoals() {
+  const goals = state.goals || [];
+  $('#goalList').innerHTML = goals.map((g) => {
+    const mine = liveHabits().filter((h) => h.goalId === g.id);
+    const p = goalProgress(g, liveHabits(), state.log || {}, dayKey());
+    const line = p.kind === 'counted'
+      ? `${p.done}/${p.total} ${esc(p.unit)} · ${p.daysLeft} days left · ${p.needPerDay}/day to make it${p.onPaceDate ? ` · at your pace: ${humanDate(p.onPaceDate)}` : ''}`
+      : `${p.sessions} session${p.sessions === 1 ? '' : 's'} logged${g.targetDate ? ` · aiming for ${humanDate(g.targetDate)}` : ''}`;
+    return `<div class="goal-card" data-goal="${g.id}">
+      <div class="goal-top"><span class="goal-name">${esc(g.name)}</span></div>
+      ${g.why ? `<p class="goal-why">${esc(g.why)}</p>` : ''}
+      <p class="goal-line">${line}</p>
+      <div class="goal-habits">${mine.length
+        ? mine.map((h) => `<span class="gh">${esc(h.name)}<em>${habitStats(h, state.log || {}, dayKey()).done}/30d</em></span>`).join('')
+        : '<span class="gh dim">No habits yet — add one and point it here.</span>'}</div>
+    </div>`;
+  }).join('');
+  $$('#goalList [data-goal]').forEach((el) => el.addEventListener('click', () => openGoalSheet(el.dataset.goal)));
+}
+
+/* ───────────────────────── progress ───────────────────────── */
+function renderProgress() {
+  const habits = liveHabits();
+  $('#progressEmpty').hidden = habits.length > 0;
+  $('#progressList').innerHTML = habits.map((h) => {
+    const st = habitStats(h, state.log || {}, dayKey(), 30);
+    const goal = (state.goals || []).find((g) => g.id === h.goalId);
+    return `<div class="prog">
+      <div class="prog-head">
+        <span class="prog-name">${esc(h.name)}</span>
+        <span class="prog-rate">${st.done} of the last 30 days</span>
+      </div>
+      ${goal ? `<p class="prog-goal">${esc(goal.name)}</p>` : ''}
+      <div class="grid30">${st.days.map((d) => `<i class="${d.done ? 'on' : ''}" title="${d.key}"></i>`).join('')}</div>
+      <div class="prog-foot">
+        <span><b>${st.thisWeek}/${st.target}</b> this week</span>
+        <span><b>${st.streak}</b> day run</span>
+        <span><b>${st.best}</b> best run</span>
+      </div>
+    </div>`;
+  }).join('');
+}
 
 /* ───────────────────────── decks view ───────────────────────── */
 function renderDecks() {
@@ -677,12 +853,14 @@ function nextChunk() {
   session.i >= session.queue.length ? finishSession() : showChunk();
 }
 
-function bumpDaily() {
+function bumpDaily(deckId = state.activeDeck) {
   bumpStreak();
   const today = dayKey();
-  state.daily = state.daily && state.daily.day === today
-    ? { day: today, count: state.daily.count + 1 }
-    : { day: today, count: 1 };
+  const base = state.daily && state.daily.day === today ? state.daily : { day: today, count: 0, decks: {} };
+  base.decks = base.decks || {};
+  base.count += 1;
+  if (deckId) base.decks[deckId] = (base.decks[deckId] || 0) + 1;
+  state.daily = base;
   save();
 }
 
@@ -709,11 +887,7 @@ function answer(correct) {
   const card = session.queue[session.i];
   grade(card, correct);
   correct ? session.right++ : session.wrong++;
-  bumpStreak();
-  const today = dayKey();
-  state.daily = state.daily && state.daily.day === today
-    ? { day: today, count: state.daily.count + 1 }
-    : { day: today, count: 1 };
+  bumpDaily();
   buzz(correct ? 10 : 22);
   if (!correct && state.settings.requeue && !session.requeued.has(card.id)) {
     session.requeued.add(card.id);
@@ -1337,7 +1511,106 @@ function setupModals() {
 
   document.addEventListener('keydown', (e) => {
     if (e.key !== 'Escape') return;
-    ['#scrim', '#deckScrim', '#nodeScrim', '#reviewScrim'].forEach((s) => { if (!$(s).hidden) $(s).hidden = true; });
+    ['#scrim', '#deckScrim', '#nodeScrim', '#reviewScrim', '#habitScrim', '#goalScrim'].forEach((s) => { if (!$(s).hidden) $(s).hidden = true; });
+  });
+}
+
+/* ── habit + goal sheets ───────────────────────────────────────── */
+let editingHabit = null;
+function openHabitSheet(id = null) {
+  editingHabit = id;
+  const h = id ? habitById(id) : null;
+  $('#habitTitle').textContent = h ? 'Edit habit' : 'New habit';
+  $('#hName').value = h ? h.name : '';
+  $('#hFloor').value = h ? (h.floor || '') : '';
+  $('#hCadence').innerHTML = Object.values(CADENCE).map((c) => `<option value="${c.id}">${c.label}</option>`).join('');
+  $('#hCadence').value = h ? h.cadence : 'daily';
+  $('#hGoal').innerHTML = '<option value="">On its own</option>' +
+    (state.goals || []).map((g) => `<option value="${g.id}">${esc(g.name)}</option>`).join('');
+  $('#hGoal').value = h ? (h.goalId || '') : '';
+  $('#hLink').innerHTML = '<option value="">Not linked — I tick it myself</option>' +
+    state.decks.map((d) => `<option value="${d.id}">${esc(d.name)}</option>`).join('');
+  $('#hLink').value = h ? (h.deckId || '') : '';
+  $('#hAmount').value = h ? (h.amount || 15) : 15;
+  $('#hAmountField').hidden = !$('#hLink').value;
+  $('#hGate').setAttribute('aria-checked', String(h ? !!h.gate : false));
+  $('#hDelete').hidden = !h;
+  $('#habitScrim').hidden = false;
+  setTimeout(() => $('#hName').focus(), 200);
+}
+const closeHabitSheet = () => { $('#habitScrim').hidden = true; editingHabit = null; };
+
+let editingGoal = null;
+function openGoalSheet(id = null) {
+  editingGoal = id;
+  const g = id ? (state.goals || []).find((x) => x.id === id) : null;
+  $('#goalTitle').textContent = g ? 'Edit goal' : 'New goal';
+  $('#gName').value = g ? g.name : '';
+  $('#gWhy').value = g ? (g.why || '') : '';
+  $('#gDate').value = g ? (g.targetDate || '') : '';
+  $('#gDelete').hidden = !g;
+  $('#goalScrim').hidden = false;
+  setTimeout(() => $('#gName').focus(), 200);
+}
+const closeGoalSheet = () => { $('#goalScrim').hidden = true; editingGoal = null; };
+
+function setupPlanner() {
+  $('#newHabitBtn').addEventListener('click', () => openHabitSheet(null));
+  $('#newGoalBtn').addEventListener('click', () => openGoalSheet(null));
+  $('#hCancel').addEventListener('click', closeHabitSheet);
+  $('#gCancel').addEventListener('click', closeGoalSheet);
+  $('#habitScrim').addEventListener('click', (e) => { if (e.target === $('#habitScrim')) closeHabitSheet(); });
+  $('#goalScrim').addEventListener('click', (e) => { if (e.target === $('#goalScrim')) closeGoalSheet(); });
+  $('#hGate').addEventListener('click', () => {
+    const on = $('#hGate').getAttribute('aria-checked') !== 'true';
+    $('#hGate').setAttribute('aria-checked', String(on));
+    /* a habit you do at bedtime would hold the gate shut all day */
+    $('#hGateHint').textContent = on
+      ? 'Blocks YouTube and Instagram until it is done — so keep this for things you can do early.'
+      : 'Tracked, but never blocks anything.';
+  });
+  $('#hLink').addEventListener('change', () => { $('#hAmountField').hidden = !$('#hLink').value; });
+
+  $('#hSave').addEventListener('click', () => {
+    const name = $('#hName').value.trim();
+    if (!name) return toast('Give the habit a name.', 'bad');
+    const fields = {
+      name,
+      floor: $('#hFloor').value.trim(),
+      cadence: $('#hCadence').value,
+      goalId: $('#hGoal').value || null,
+      deckId: $('#hLink').value || null,
+      amount: Math.max(1, Number($('#hAmount').value) || 1),
+      gate: $('#hGate').getAttribute('aria-checked') === 'true',
+    };
+    state.habits = state.habits || [];
+    if (editingHabit) Object.assign(habitById(editingHabit), fields);
+    else state.habits.push({ id: 'h-' + uid().slice(0, 8), created: new Date().toISOString(), ...fields });
+    save(); closeHabitSheet(); renderToday();
+    toast(editingHabit ? 'Habit updated.' : 'Habit added.', 'good');
+  });
+  $('#hDelete').addEventListener('click', () => {
+    if (!confirm('Delete this habit? Its history goes too.')) return;
+    state.habits = (state.habits || []).filter((h) => h.id !== editingHabit);
+    if (state.log) delete state.log[editingHabit];
+    save(); closeHabitSheet(); renderToday(); toast('Habit deleted.');
+  });
+
+  $('#gSave').addEventListener('click', () => {
+    const name = $('#gName').value.trim();
+    if (!name) return toast('Give the goal a name.', 'bad');
+    const fields = { name, why: $('#gWhy').value.trim(), targetDate: $('#gDate').value || null };
+    state.goals = state.goals || [];
+    if (editingGoal) Object.assign(state.goals.find((g) => g.id === editingGoal), fields);
+    else state.goals.push({ id: 'g-' + uid().slice(0, 8), created: new Date().toISOString(), ...fields });
+    save(); closeGoalSheet(); renderGoals();
+    toast(editingGoal ? 'Goal updated.' : 'Goal added.', 'good');
+  });
+  $('#gDelete').addEventListener('click', () => {
+    if (!confirm('Delete this goal? Its habits stay, just unlinked.')) return;
+    state.goals = (state.goals || []).filter((g) => g.id !== editingGoal);
+    (state.habits || []).forEach((h) => { if (h.goalId === editingGoal) h.goalId = null; });
+    save(); closeGoalSheet(); renderGoals(); toast('Goal deleted.');
   });
 }
 
@@ -1489,6 +1762,7 @@ function boot() {
   setupAdd();
   setupBrowse();
   setupModals();
+  setupPlanner();
   setupSettings();
   setEngine('local');
 
@@ -1497,7 +1771,7 @@ function boot() {
     applyTheme(state.settings.theme); save();
   });
   $('#settingsBtn').addEventListener('click', () => go('more'));
-  $('#brandBtn').addEventListener('click', () => go('decks'));
+  $('#brandBtn').addEventListener('click', () => go('today'));
   $('#deckPill').addEventListener('click', () => go('decks'));
   $('#deckTitle').addEventListener('click', () => openDeckSheet(state.activeDeck));
   $$('.quick[data-go]').forEach((b) => b.addEventListener('click', () => go(b.dataset.go)));
@@ -1549,10 +1823,14 @@ function boot() {
   const onScroll = () => $('.topbar').classList.toggle('scrolled', window.scrollY > 6);
   window.addEventListener('scroll', onScroll, { passive: true });
   onScroll();
-  document.addEventListener('visibilitychange', () => { if (!document.hidden && current === 'decks') renderDecks(); });
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) return;
+    if (current === 'today') renderToday();
+    if (current === 'decks') renderDecks();
+  });
 
   const hash = location.hash.slice(1);
-  go(['decks', 'more'].includes(hash) ? hash : 'decks');
+  go(['today', 'goals', 'progress', 'decks', 'more'].includes(hash) ? hash : 'today');
 
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));

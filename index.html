@@ -41,13 +41,61 @@
 
 <main id="app">
 
-  <!-- ───────────────── DECKS (home) ───────────────── -->
+  <!-- ───────────────── TODAY ───────────────── -->
+  <section class="view" id="view-today" data-view="today">
+    <div class="hero">
+      <p class="eyebrow" id="todayGreeting">Good evening</p>
+      <h1 class="today-line" id="todayLine">Today</h1>
+      <div class="gate" id="gate" hidden><span class="gate-dot"></span><span id="gateText">—</span></div>
+    </div>
+
+    <div class="today-group" id="firstThings" hidden>
+      <h2 class="group-head">First things first</h2>
+      <div class="habit-list" id="firstList"></div>
+    </div>
+
+    <div class="today-group" id="alsoToday" hidden>
+      <h2 class="group-head">Also today <span class="group-note">no pressure</span></h2>
+      <div class="habit-list" id="alsoList"></div>
+    </div>
+
+    <div class="today-group" id="doneToday" hidden>
+      <h2 class="group-head">Done <span class="group-note" id="doneCount"></span></h2>
+      <div class="habit-list" id="doneList"></div>
+    </div>
+
+    <p class="empty" id="todayEmpty" hidden>No habits yet. Add one and it shows up here every day.</p>
+    <button class="new-deck" id="newHabitBtn">
+      <span class="plus"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></span>
+      <span><strong>New habit</strong><em>Something small, every day</em></span>
+    </button>
+  </section>
+
+  <!-- ───────────────── GOALS ───────────────── -->
+  <section class="view" id="view-goals" data-view="goals">
+    <div class="view-head"><h1>Goals</h1></div>
+    <p class="lede">What the habits are for. A date is a direction, not a deadline.</p>
+    <div class="goal-list" id="goalList"></div>
+    <button class="new-deck" id="newGoalBtn">
+      <span class="plus"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></span>
+      <span><strong>New goal</strong><em>Where the small things are taking you</em></span>
+    </button>
+  </section>
+
+  <!-- ───────────────── PROGRESS ───────────────── -->
+  <section class="view" id="view-progress" data-view="progress">
+    <div class="view-head"><h1>Progress</h1></div>
+    <p class="lede">What actually happened. Plain counts, no grading.</p>
+    <div class="progress-list" id="progressList"></div>
+    <p class="empty" id="progressEmpty" hidden>Nothing tracked yet.</p>
+  </section>
+
+  <!-- ───────────────── DECKS (Learn) ───────────────── -->
   <section class="view" id="view-decks" data-view="decks">
     <div class="hero">
       <p class="eyebrow" id="greeting">Welcome back</p>
       <h1 class="due-count"><span id="dueBig">0</span><small id="dueWord">cards due</small></h1>
       <p class="sub" id="heroSub">across all your decks</p>
-      <div class="gate" id="gate" hidden><span class="gate-dot"></span><span id="gateText">—</span></div>
     </div>
     <div class="deck-grid" id="deckGrid"></div>
   </section>
@@ -68,10 +116,11 @@
       <div class="stat"><span class="stat-num" id="statStreak">0</span><span class="stat-label">Day streak</span></div>
     </div>
 
-    <div class="quick-row">
+    <div class="quick-row four">
       <button class="quick" data-go="path"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21V9"/><path d="M12 12c0-3 2.4-5.5 6-6 0 3.6-2.2 6-6 6z"/><path d="M12 16c0-2.4-1.9-4.4-4.8-4.8 0 2.9 1.8 4.8 4.8 4.8z"/></svg><span id="quickPathLabel">The path</span></button>
       <button class="quick" data-go="add"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><span>Add cards</span></button>
       <button class="quick" data-go="browse"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h11"/></svg><span>Browse</span></button>
+      <button class="quick" data-go="study"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="7" width="13" height="13" rx="3"/><path d="M8 4h9a3 3 0 0 1 3 3v9"/></svg><span>Study</span></button>
     </div>
 
     <div class="panel">
@@ -402,6 +451,51 @@ opportunity cost&#9;what you gave up"></textarea></label>
       <span class="spacer"></span>
       <span class="key-state" id="reviewCount"></span>
       <button class="btn primary" id="reviewAdd">Add kept</button>
+    </div>
+  </div>
+</div>
+
+
+<!-- ───── habit sheet ───── -->
+<div class="modal-scrim" id="habitScrim" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="habitTitle">
+    <h3 id="habitTitle">New habit</h3>
+    <label class="field"><span>What is it</span><input id="hName" placeholder="Play guitar, one math lesson, 15 cards…" /></label>
+    <label class="field"><span>The floor <em>the tiniest version that still counts</em></span>
+      <input id="hFloor" placeholder="Pick it up and play one thing" /></label>
+    <label class="field"><span>How often</span>
+      <div class="select-wrap"><select id="hCadence"></select><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></div></label>
+    <label class="field"><span>Part of a goal <em>optional</em></span>
+      <div class="select-wrap"><select id="hGoal"></select><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></div></label>
+    <label class="field"><span>Powered by a deck <em>checks itself off</em></span>
+      <div class="select-wrap"><select id="hLink"></select><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></div></label>
+    <label class="field" id="hAmountField" hidden><span>How many to count as done</span>
+      <input id="hAmount" type="number" min="1" value="15" /></label>
+    <div class="row">
+      <div><strong>Holds the gate</strong><p class="hint" id="hGateHint">Blocks YouTube and Instagram until it is done.</p></div>
+      <button class="switch" id="hGate" role="switch" aria-checked="false" type="button"><span></span></button>
+    </div>
+    <div class="modal-actions">
+      <button class="btn danger-ghost" id="hDelete" hidden>Delete</button>
+      <span class="spacer"></span>
+      <button class="btn ghost" id="hCancel">Cancel</button>
+      <button class="btn primary" id="hSave">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- ───── goal sheet ───── -->
+<div class="modal-scrim" id="goalScrim" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="goalTitle">
+    <h3 id="goalTitle">New goal</h3>
+    <label class="field"><span>What do you want</span><input id="gName" placeholder="Memorise Man in the Arena, get good at math…" /></label>
+    <label class="field"><span>Why <em>optional, but it helps on bad days</em></span><input id="gWhy" placeholder="" /></label>
+    <label class="field"><span>Aiming for <em>optional</em></span><input id="gDate" type="date" /></label>
+    <div class="modal-actions">
+      <button class="btn danger-ghost" id="gDelete" hidden>Delete</button>
+      <span class="spacer"></span>
+      <button class="btn ghost" id="gCancel">Cancel</button>
+      <button class="btn primary" id="gSave">Save</button>
     </div>
   </div>
 </div>

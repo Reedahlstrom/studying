@@ -230,6 +230,73 @@ svg { width: 1em; height: 1em; fill: none; stroke: currentColor; stroke-width: 1
 .btn.danger-ghost:hover { background: var(--red-soft); }
 kbd { font: 500 11px/1 ui-monospace, monospace; padding: 3px 5px; border-radius: 5px; background: #ffffff30; color: inherit; }
 
+/* ══════════ today / habits ══════════ */
+.today-line { font-size: clamp(26px, 6.4vw, 38px); font-weight: 700; letter-spacing: -.03em; line-height: 1.15; margin: 6px 0 4px; text-wrap: balance; }
+.today-line.done { color: var(--olive-deep); }
+[data-theme="dark"] .today-line.done { color: var(--olive); }
+
+.today-group { margin-top: 26px; }
+.group-head { font-size: 13px; font-weight: 680; letter-spacing: .04em; text-transform: uppercase; color: var(--text-dim); margin: 0 2px 11px; display: flex; align-items: baseline; gap: 9px; }
+.group-note { font-size: 11.5px; font-weight: 500; letter-spacing: 0; text-transform: none; color: var(--text-faint); }
+.habit-list { display: grid; gap: 9px; }
+
+.habit {
+  display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 13px;
+  padding: 14px 15px; border-radius: var(--r);
+  background: var(--bg-elev); border: 1px solid var(--line-soft); box-shadow: var(--shadow);
+  animation: riseIn .38s var(--ease) both;
+  transition: opacity .3s var(--ease), background .25s;
+}
+.habit.done { opacity: .55; }
+.habit.done .habit-name { text-decoration: line-through; text-decoration-color: var(--text-faint); }
+.tick {
+  width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; flex: none;
+  background: transparent; border: 2px solid var(--line); color: transparent;
+  transition: background .25s var(--ease), border-color .25s, color .25s, transform .3s var(--spring);
+}
+.tick svg { width: 15px; height: 15px; stroke-width: 3; }
+.tick:hover { border-color: var(--olive); }
+.tick:active { transform: scale(.88); }
+.habit.done .tick { background: var(--olive); border-color: var(--olive); color: #fff; }
+[data-theme="dark"] .habit.done .tick { color: #161a10; }
+.habit-main { cursor: pointer; min-width: 0; }
+.habit-name { font-size: 15.5px; font-weight: 620; letter-spacing: -.01em; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.gate-tag { font-size: 9.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; padding: 2px 7px; border-radius: 99px; background: color-mix(in srgb, var(--gold) 16%, transparent); color: var(--gold); }
+.habit-floor { font-size: 12.5px; color: var(--text-faint); margin-top: 2px; }
+.habit-meta { display: flex; align-items: center; gap: 7px; margin-top: 6px; font-size: 11.5px; color: var(--text-dim); flex-wrap: wrap; }
+.dots { display: inline-flex; gap: 3px; }
+.dots i { width: 7px; height: 7px; border-radius: 50%; background: var(--bg-elev-2); border: 1px solid var(--line-soft); }
+.dots i.on { background: var(--olive); border-color: var(--olive); }
+.habit-go { width: 34px; height: 34px; border-radius: 11px; display: grid; place-items: center; color: var(--olive); background: var(--olive-soft); flex: none; transition: transform .26s var(--spring); }
+.habit-go svg { width: 17px; height: 17px; }
+.habit-go:active { transform: scale(.9); }
+
+/* ══════════ goals ══════════ */
+.goal-list { display: grid; gap: 11px; margin-bottom: 14px; }
+.goal-card { padding: 18px; border-radius: var(--r-lg); background: var(--bg-elev); border: 1px solid var(--line-soft); box-shadow: var(--shadow); cursor: pointer; animation: riseIn .4s var(--ease) both; transition: transform .28s var(--spring); }
+.goal-card:hover { transform: translateY(-2px); }
+.goal-name { font-size: 17px; font-weight: 660; letter-spacing: -.02em; }
+.goal-why { font-size: 13.5px; color: var(--text-dim); margin-top: 4px; font-style: italic; }
+.goal-line { font-size: 13px; color: var(--olive-deep); font-weight: 550; margin-top: 9px; font-variant-numeric: tabular-nums; }
+[data-theme="dark"] .goal-line { color: var(--olive); }
+.goal-habits { display: flex; gap: 7px; flex-wrap: wrap; margin-top: 11px; }
+.gh { font-size: 12px; padding: 5px 11px; border-radius: 99px; background: var(--bg-elev-2); color: var(--text-dim); display: inline-flex; gap: 6px; align-items: baseline; }
+.gh em { font-style: normal; color: var(--text-faint); font-size: 11px; }
+.gh.dim { color: var(--text-faint); }
+
+/* ══════════ progress ══════════ */
+.progress-list { display: grid; gap: 12px; }
+.prog { padding: 17px 18px; border-radius: var(--r-lg); background: var(--bg-elev); border: 1px solid var(--line-soft); box-shadow: var(--shadow); animation: riseIn .4s var(--ease) both; }
+.prog-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.prog-name { font-size: 15.5px; font-weight: 640; margin-right: auto; }
+.prog-rate { font-size: 13px; color: var(--text-dim); font-variant-numeric: tabular-nums; }
+.prog-goal { font-size: 12.5px; color: var(--text-faint); margin-top: 2px; }
+.grid30 { display: grid; grid-template-columns: repeat(30, 1fr); gap: 3px; margin: 13px 0 11px; }
+.grid30 i { aspect-ratio: 1; border-radius: 2px; background: var(--bg-elev-2); border: 1px solid var(--line-soft); }
+.grid30 i.on { background: var(--olive); border-color: var(--olive); }
+.prog-foot { display: flex; gap: 16px; font-size: 12.5px; color: var(--text-dim); flex-wrap: wrap; }
+.prog-foot b { color: var(--text); font-weight: 660; font-variant-numeric: tabular-nums; }
+
 /* ══════════ decks ══════════ */
 .deck-grid { display: grid; gap: 12px; margin: 26px 0 14px; }
 @media (min-width: 640px) { .deck-grid { grid-template-columns: 1fr 1fr; } }
@@ -277,6 +344,8 @@ kbd { font: 500 11px/1 ui-monospace, monospace; padding: 3px 5px; border-radius:
 .stat-label { font-size: 12px; color: var(--text-dim); }
 
 .quick-row { display: grid; grid-template-columns: repeat(3,1fr); gap: 10px; margin-bottom: 18px; }
+.quick-row.four { grid-template-columns: repeat(4,1fr); }
+@media (max-width: 460px) { .quick-row.four { grid-template-columns: repeat(2,1fr); } }
 .quick {
   display: flex; flex-direction: column; align-items: center; gap: 7px; padding: 15px 8px;
   border-radius: var(--r); background: var(--bg-elev); border: 1px solid var(--line-soft);
