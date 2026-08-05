@@ -461,7 +461,7 @@ function renderGoals() {
       <p class="goal-line">${line}</p>
       <div class="goal-habits">${mine.length
         ? mine.map((h) => `<span class="gh">${esc(h.name)}<em>${habitStats(h, state.log || {}, dayKey()).done}/30d</em></span>`).join('')
-        : '<span class="gh dim">No habits yet — add one and point it here.</span>'}</div>
+        : '<span class="gh dim">No seeds yet — plant one and point it here.</span>'}</div>
     </div>`;
   }).join('');
   $$('#goalList [data-goal]').forEach((el) => el.addEventListener('click', () => openGoalSheet(el.dataset.goal)));
@@ -518,18 +518,32 @@ function renderDecks() {
     ? `Done for today — ${reviewed} reviewed. The gate is open.`
     : `${Math.max(0, Math.min(dueAll.length, target - reviewed))} more to unlock today · ${reviewed}/${target}`;
 
+  renderHarvest(finished);
+
   $('#deckGrid').innerHTML = state.decks.map((d, i) => {
     const cards = deckCards(d.id);
     const due = cards.filter((c) => isDue(c, today)).length;
     const dueTonight = Math.min(due, leftTonight);   // tonight's slice, not the backlog
     const mastered = cards.filter((c) => c.mastered).length;
     const pct = cards.length ? Math.round((mastered / cards.length) * 100) : 0;
-    return `<button class="deck-card" data-deck="${d.id}" style="--dc:${d.color};animation-delay:${i * 45}ms">
+    const didHere = (state.daily && state.daily.day === today && state.daily.decks && state.daily.decks[d.id]) || 0;
+    const unit = isText(d) ? 'line' : 'card';
+    const settled = !dueTonight && didHere > 0;          // worked it, and nothing left
+    const badge = settled
+      ? '<span class="deck-due done"><svg viewBox="0 0 24 24"><path d="M4 12.5l5 5L20 6.5"/></svg>Done</span>'
+      : `<span class="deck-due ${dueTonight ? '' : 'zero'}">${dueTonight ? dueTonight + ' due' : 'clear'}</span>`;
+    /* on a day you did the work, what you did beats a mastery percentage */
+    const meta = settled
+      ? `${didHere} ${unit}${didHere === 1 ? '' : 's'} today${mastered ? ` · ${mastered} mastered` : ''}`
+      : dueTonight
+        ? `${dueTonight} ${unit}${dueTonight === 1 ? '' : 's'} to go${mastered ? ` · ${mastered} mastered` : ''}`
+        : cards.length ? `nothing due${mastered ? ` · ${mastered} mastered` : ''}` : 'empty';
+    return `<button class="deck-card ${settled ? 'settled' : ''}" data-deck="${d.id}" style="--dc:${d.color};animation-delay:${i * 45}ms">
       <div class="deck-top">
         <span class="deck-name">${esc(d.name)}</span>
-        <span class="deck-due ${dueTonight ? '' : 'zero'}">${dueTonight ? dueTonight + ' due' : 'clear'}</span>
+        ${badge}
       </div>
-      <div class="deck-meta">${isCurriculum(d) ? '<span class="deck-tag">curriculum</span> · ' : ''}${mastered} mastered · ${pct}%</div>
+      <div class="deck-meta">${isCurriculum(d) ? '<span class="deck-tag">curriculum</span> · ' : ''}${meta}</div>
       <div class="deck-bar"><i style="width:${pct}%;background:linear-gradient(90deg,${d.color},${d.color}bb)"></i></div>
     </button>`;
   }).join('') + `<button class="new-deck" id="newDeckBtn" style="animation-delay:${state.decks.length * 45}ms">
@@ -538,6 +552,72 @@ function renderDecks() {
     </button>`;
   $$('#deckGrid [data-deck]').forEach((b) => b.addEventListener('click', () => openDeck(b.dataset.deck)));
   $('#newDeckBtn').addEventListener('click', () => openDeckSheet(null));
+}
+
+/* ── the day's reward ──────────────────────────────────────────
+   Closure, not confetti. The plant is the only thing that grows, and it
+   grows with the streak — so the reward is the arc, not the dopamine. */
+function plantSVG(streak) {
+  const leaves = Math.min(10, Math.max(1, Math.ceil(streak / 2)));
+  const bud = streak >= 21;
+  /* the plant only grows as tall as it has leaves — no bare stalk */
+  const pairs = Math.ceil(leaves / 2);
+  const rows = [];
+  for (let r = 0; r < pairs; r++) rows.push(104 - r * 17);
+  const topY = rows[rows.length - 1] - (bud ? 16 : 10);
+
+  const parts = [];
+  for (let i = 0; i < leaves; i++) {
+    const y = rows[Math.floor(i / 2)];
+    const left = i % 2 === 0;
+    const scale = 1 - Math.floor(i / 2) * 0.09;              // smaller toward the tip
+    const w = 26 * scale, h = 11 * scale;
+    const d = left
+      ? `M50,${y} C${50 - w * 0.55},${y - h} ${50 - w},${y - h * 0.35} ${50 - w},${y + h * 0.5} C${50 - w * 0.5},${y + h} ${50 - w * 0.2},${y + h * 0.6} 50,${y}`
+      : `M50,${y} C${50 + w * 0.55},${y - h} ${50 + w},${y - h * 0.35} ${50 + w},${y + h * 0.5} C${50 + w * 0.5},${y + h} ${50 + w * 0.2},${y + h * 0.6} 50,${y}`;
+    parts.push(`<path class="leaf" style="animation-delay:${380 + i * 90}ms" d="${d}"/>`);
+  }
+  return `<svg viewBox="0 0 100 125" aria-hidden="true">
+    <path class="stem" d="M50,120 C50,104 48,90 50,74 C52,58 50,${topY + 12} 50,${topY}"/>
+    ${parts.join('')}
+    ${bud ? `<circle class="bud" style="animation-delay:${380 + leaves * 90}ms" cx="50" cy="${topY - 6}" r="8"/>` : ''}
+  </svg>`;
+}
+
+function renderHarvest(finished) {
+  const box = $('#harvest');
+  const today = dayKey();
+  const perDeck = (state.daily && state.daily.day === today && state.daily.decks) || {};
+  let cardsDone = 0, linesDone = 0;
+  for (const [id, n] of Object.entries(perDeck)) {
+    const deck = state.decks.find((d) => d.id === id);
+    if (!deck) continue;
+    isText(deck) ? (linesDone += n) : (cardsDone += n);
+  }
+  /* a reward for a day you did nothing would be hollow */
+  if (!finished || cardsDone + linesDone === 0) { box.hidden = true; return; }
+
+  const streak = liveStreak();
+  box.hidden = false;
+  $('#plant').innerHTML = plantSVG(streak);
+  $('#harvestDay').textContent = streak > 1 ? `${streak} days in a row` : 'Day one';
+
+  const bits = [];
+  if (cardsDone) bits.push(`${cardsDone} card${cardsDone === 1 ? '' : 's'}`);
+  if (linesDone) bits.push(`${linesDone} line${linesDone === 1 ? '' : 's'}`);
+  $('#harvestLine').textContent = bits.join(' · ') + ' today';
+
+  /* direction: what today actually bought you */
+  const promoted = state.cards.filter((c) => c.lastReviewed === today && c.box > 1 && !c.mastered).length;
+  const mastered = state.cards.filter((c) => c.mastered && c.lastReviewed === today).length;
+  const next = upcoming(state.cards);
+  const note = [];
+  if (promoted) note.push(`${promoted} moved up a box`);
+  if (mastered) note.push(`${mastered} retired for good`);
+  if (next && next !== 'today') note.push(`next review ${next}`);
+  $('#harvestNote').textContent = note.join(' · ');
+
+  box.classList.remove('in'); void box.offsetWidth; box.classList.add('in');
 }
 
 function greetingText() {
@@ -915,9 +995,21 @@ function finishSession() {
   ring.style.strokeDashoffset = 327;
   requestAnimationFrame(() => { ring.style.strokeDashoffset = 327 - (327 * pct) / 100; });
   const stillDue = deckCards().filter((c) => isDue(c)).length;
-  $('#doneSummary').textContent = answered
-    ? `${session.right} right · ${session.wrong} missed${stillDue ? ` · ${stillDue} still due in this deck` : ' · deck clear for today'}`
-    : 'Nothing was due here — enjoy the night off.';
+  /* what the work bought you, and where it goes next — direction beats a score */
+  const touched = (session.queue || []).filter((c) => c.lastReviewed === dayKey());
+  const moved = touched.filter((c) => c.box > 1 && !c.mastered).length;
+  const retired = touched.filter((c) => c.mastered).length;
+  const next = upcoming(deckCards());
+  const parts = [];
+  if (!answered) parts.push('Nothing was due here — enjoy the night off');
+  else {
+    parts.push(`${session.right} right, ${session.wrong} missed`);
+    if (moved) parts.push(`${moved} moved up a box`);
+    if (retired) parts.push(`${retired} retired for good`);
+    if (stillDue) parts.push(`${stillDue} still waiting here`);
+    else if (next && next !== 'today') parts.push(`next review ${next}`);
+  }
+  $('#doneSummary').textContent = parts.join(' · ');
   $('#doneAgain').hidden = stillDue === 0;
   session = null;
   save();
@@ -1520,7 +1612,7 @@ let editingHabit = null;
 function openHabitSheet(id = null) {
   editingHabit = id;
   const h = id ? habitById(id) : null;
-  $('#habitTitle').textContent = h ? 'Edit habit' : 'New habit';
+  $('#habitTitle').textContent = h ? 'Edit seed' : 'Plant a seed';
   $('#hName').value = h ? h.name : '';
   $('#hFloor').value = h ? (h.floor || '') : '';
   $('#hCadence').innerHTML = Object.values(CADENCE).map((c) => `<option value="${c.id}">${c.label}</option>`).join('');
@@ -1573,7 +1665,7 @@ function setupPlanner() {
 
   $('#hSave').addEventListener('click', () => {
     const name = $('#hName').value.trim();
-    if (!name) return toast('Give the habit a name.', 'bad');
+    if (!name) return toast('Give the seed a name.', 'bad');
     const fields = {
       name,
       floor: $('#hFloor').value.trim(),
@@ -1587,13 +1679,13 @@ function setupPlanner() {
     if (editingHabit) Object.assign(habitById(editingHabit), fields);
     else state.habits.push({ id: 'h-' + uid().slice(0, 8), created: new Date().toISOString(), ...fields });
     save(); closeHabitSheet(); renderToday();
-    toast(editingHabit ? 'Habit updated.' : 'Habit added.', 'good');
+    toast(editingHabit ? 'Seed updated.' : 'Seed planted.', 'good');
   });
   $('#hDelete').addEventListener('click', () => {
-    if (!confirm('Delete this habit? Its history goes too.')) return;
+    if (!confirm('Delete this seed? Its history goes too.')) return;
     state.habits = (state.habits || []).filter((h) => h.id !== editingHabit);
     if (state.log) delete state.log[editingHabit];
-    save(); closeHabitSheet(); renderToday(); toast('Habit deleted.');
+    save(); closeHabitSheet(); renderToday(); toast('Seed removed.');
   });
 
   $('#gSave').addEventListener('click', () => {
@@ -1607,7 +1699,7 @@ function setupPlanner() {
     toast(editingGoal ? 'Goal updated.' : 'Goal added.', 'good');
   });
   $('#gDelete').addEventListener('click', () => {
-    if (!confirm('Delete this goal? Its habits stay, just unlinked.')) return;
+    if (!confirm('Delete this goal? Its seeds stay, just unlinked.')) return;
     state.goals = (state.goals || []).filter((g) => g.id !== editingGoal);
     (state.habits || []).forEach((h) => { if (h.goalId === editingGoal) h.goalId = null; });
     save(); closeGoalSheet(); renderGoals(); toast('Goal deleted.');

@@ -64,21 +64,21 @@
       <div class="habit-list" id="doneList"></div>
     </div>
 
-    <p class="empty" id="todayEmpty" hidden>No habits yet. Add one and it shows up here every day.</p>
+    <p class="empty" id="todayEmpty" hidden>No seeds planted yet. Add one and it shows up here every day.</p>
     <button class="new-deck" id="newHabitBtn">
       <span class="plus"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></span>
-      <span><strong>New habit</strong><em>Something small, every day</em></span>
+      <span><strong>Plant a seed</strong><em>Small · Every day · End-goal focused · Done or not done</em></span>
     </button>
   </section>
 
   <!-- ───────────────── GOALS ───────────────── -->
   <section class="view" id="view-goals" data-view="goals">
     <div class="view-head"><h1>Goals</h1></div>
-    <p class="lede">What the habits are for. A date is a direction, not a deadline.</p>
+    <p class="lede">What the seeds grow into. A date is a direction, not a deadline.</p>
     <div class="goal-list" id="goalList"></div>
     <button class="new-deck" id="newGoalBtn">
       <span class="plus"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></span>
-      <span><strong>New goal</strong><em>Where the small things are taking you</em></span>
+      <span><strong>New goal</strong><em>Where the seeds are taking you</em></span>
     </button>
   </section>
 
@@ -97,6 +97,15 @@
       <h1 class="due-count"><span id="dueBig">0</span><small id="dueWord">cards due</small></h1>
       <p class="sub" id="heroSub">across all your decks</p>
     </div>
+
+    <!-- the day's reward: it grows with the streak -->
+    <div class="harvest" id="harvest" hidden>
+      <div class="plant" id="plant"></div>
+      <p class="harvest-day" id="harvestDay">Day 1</p>
+      <p class="harvest-line" id="harvestLine">—</p>
+      <p class="harvest-note" id="harvestNote"></p>
+    </div>
+
     <div class="deck-grid" id="deckGrid"></div>
   </section>
 
@@ -459,18 +468,20 @@ opportunity cost&#9;what you gave up"></textarea></label>
 <!-- ───── habit sheet ───── -->
 <div class="modal-scrim" id="habitScrim" hidden>
   <div class="modal" role="dialog" aria-modal="true" aria-labelledby="habitTitle">
-    <h3 id="habitTitle">New habit</h3>
+    <h3 id="habitTitle">Plant a seed</h3>
+    <p class="seeds-key"><b>S</b>mall · <b>E</b>very day · <b>E</b>nd-goal focused · <b>D</b>one or not done</p>
     <label class="field"><span>What is it</span><input id="hName" placeholder="Play guitar, one math lesson, 15 cards…" /></label>
-    <label class="field"><span>The floor <em>the tiniest version that still counts</em></span>
+    <label class="field"><span><i class="ltr">S</i>mall — the floor <em>the tiniest version that still counts</em></span>
       <input id="hFloor" placeholder="Pick it up and play one thing" /></label>
-    <label class="field"><span>How often</span>
+    <label class="field"><span><i class="ltr">E</i>very day — how often</span>
       <div class="select-wrap"><select id="hCadence"></select><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></div></label>
-    <label class="field"><span>Part of a goal <em>optional</em></span>
+    <label class="field"><span><i class="ltr">E</i>nd goal it feeds <em>optional</em></span>
       <div class="select-wrap"><select id="hGoal"></select><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></div></label>
     <label class="field"><span>Powered by a deck <em>checks itself off</em></span>
       <div class="select-wrap"><select id="hLink"></select><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></div></label>
     <label class="field" id="hAmountField" hidden><span>How many to count as done</span>
       <input id="hAmount" type="number" min="1" value="15" /></label>
+    <p class="seeds-d"><i class="ltr">D</i>one or not done. No half credit, no partial scores — you either did it or you didn't.</p>
     <div class="row">
       <div><strong>Holds the gate</strong><p class="hint" id="hGateHint">Blocks YouTube and Instagram until it is done.</p></div>
       <button class="switch" id="hGate" role="switch" aria-checked="false" type="button"><span></span></button>

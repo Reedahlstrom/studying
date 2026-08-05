@@ -297,6 +297,38 @@ kbd { font: 500 11px/1 ui-monospace, monospace; padding: 3px 5px; border-radius:
 .prog-foot { display: flex; gap: 16px; font-size: 12.5px; color: var(--text-dim); flex-wrap: wrap; }
 .prog-foot b { color: var(--text); font-weight: 660; font-variant-numeric: tabular-nums; }
 
+/* ══════════ the day's reward ══════════
+   Quiet closure. Nothing bounces, nothing pops — it grows. */
+.harvest {
+  display: grid; justify-items: center; text-align: center; gap: 3px;
+  padding: 30px 20px 34px; margin: 18px 0 22px;
+  border-radius: var(--r-xl);
+  background: linear-gradient(170deg, var(--olive-soft), transparent 78%);
+  border: 1px solid color-mix(in srgb, var(--olive) 18%, transparent);
+}
+.plant { width: 104px; height: 130px; margin-bottom: 6px; }
+.plant svg { width: 100%; height: 100%; overflow: visible; }
+.plant .stem {
+  fill: none; stroke: var(--olive-deep); stroke-width: 3.4; stroke-linecap: round;
+  stroke-dasharray: 130; stroke-dashoffset: 130;
+  animation: grow 1.15s var(--ease) .1s forwards;
+}
+[data-theme="dark"] .plant .stem { stroke: var(--olive); }
+@keyframes grow { to { stroke-dashoffset: 0; } }
+.plant .leaf {
+  fill: var(--olive); stroke: none; opacity: 0;
+  transform-origin: 50px 70px;
+  animation: unfurl .62s var(--spring) forwards;
+}
+.plant .bud { fill: var(--gold); opacity: 0; transform-origin: 50px 17px; animation: unfurl .7s var(--spring) forwards; }
+@keyframes unfurl { from { opacity: 0; transform: scale(.2); } to { opacity: 1; transform: scale(1); } }
+
+.harvest-day { font-size: clamp(21px, 5vw, 27px); font-weight: 690; letter-spacing: -.025em; color: var(--olive-deep); }
+[data-theme="dark"] .harvest-day { color: var(--olive); }
+.harvest-line { font-size: 15px; color: var(--text); font-weight: 550; }
+.harvest-note { font-size: 12.5px; color: var(--text-dim); margin-top: 5px; }
+.harvest.in { animation: riseIn .5s var(--ease) both; }
+
 /* ══════════ decks ══════════ */
 .deck-grid { display: grid; gap: 12px; margin: 26px 0 14px; }
 @media (min-width: 640px) { .deck-grid { grid-template-columns: 1fr 1fr; } }
@@ -316,6 +348,13 @@ kbd { font: 500 11px/1 ui-monospace, monospace; padding: 3px 5px; border-radius:
 .deck-due { padding: 4px 10px; border-radius: 999px; font-size: 12.5px; font-weight: 650; background: var(--olive-soft); color: var(--olive-deep); white-space: nowrap; }
 [data-theme="dark"] .deck-due { color: var(--olive); }
 .deck-due.zero { background: var(--bg-elev-2); color: var(--text-faint); }
+.deck-due.done {
+  display: inline-flex; align-items: center; gap: 5px;
+  background: var(--olive); color: #fff;
+}
+[data-theme="dark"] .deck-due.done { color: #161a10; }
+.deck-due.done svg { width: 12px; height: 12px; stroke-width: 3.2; }
+.deck-card.settled { border-color: color-mix(in srgb, var(--olive) 30%, transparent); }
 .deck-meta { font-size: 13px; color: var(--text-dim); font-variant-numeric: tabular-nums; }
 .deck-bar { height: 7px; border-radius: 99px; background: var(--bg-elev-2); overflow: hidden; }
 .deck-bar i { display: block; height: 100%; border-radius: 99px; background: linear-gradient(90deg, var(--olive-deep), var(--olive)); transition: width .8s var(--ease); }
@@ -707,3 +746,15 @@ select { padding-right: 38px; cursor: pointer; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
 }
+
+/* ══════════ SEEDS ══════════ */
+.seeds-key { font-size: 12.5px; color: var(--text-dim); margin: -6px 0 4px; }
+.seeds-key b { color: var(--olive-deep); font-weight: 700; }
+[data-theme="dark"] .seeds-key b { color: var(--olive); }
+.ltr {
+  display: inline-grid; place-items: center; width: 17px; height: 17px; margin-right: 3px;
+  border-radius: 5px; background: var(--olive-soft); color: var(--olive-deep);
+  font-style: normal; font-weight: 800; font-size: 10.5px; vertical-align: -2px;
+}
+[data-theme="dark"] .ltr { color: var(--olive); }
+.seeds-d { font-size: 12.5px; color: var(--text-dim); padding: 11px 13px; border-radius: var(--r-sm); background: var(--bg-elev-2); }
