@@ -3,6 +3,7 @@
    No dependencies, no backend. State lives in localStorage.
    ══════════════════════════════════════════════════════════════ */
 import { PHASES, PRINCIPLES, CURRICULUM_CARDS } from './curriculum.js';
+import { MATH_CARDS } from './math.js';
 import { AMBITION, chunkText, firstLetters, gradeTyping, estimateAll, wordsIn } from './passages.js';
 import * as PLAN from './planner.js';
 import { CADENCE, perWeekOf, requiredToday, availableToday, gateBlockers, gateOpen, didOn, stats as habitStats, goalProgress } from './planner.js';
@@ -12,7 +13,8 @@ const LEGACY_KEY = 'ledger.v1';
 const BOX_COUNT = 5;
 const INTERVALS = { 1: 0, 2: 2, 3: 4, 4: 8, 5: 16 };
 const CURRICULUM_DECK = 'deck-business';
-const SEED_VERSION = 3;   // bump whenever curriculum.js gains cards, or installs never see them
+const MATH_DECK = 'deck-math';
+const SEED_VERSION = 4;   // bump whenever curriculum.js gains cards, or installs never see them
 
 const DECK_COLORS = ['#6d8340', '#3f7d78', '#8a5a9e', '#b06a35', '#3f6ba8', '#a8496a', '#7a7f45', '#4a7f4f'];
 
@@ -123,6 +125,7 @@ function normalizeCard(c) {
     seen: Number(c.seen) || 0,
     right: Number(c.right) || 0,
     source: c.source || 'manual',
+    seq: Number.isFinite(c.seq) ? c.seq : null,   // position in a designed curriculum
     /* passage chunks only — null on ordinary cards */
     passageId: c.passageId || null,
     order: c.passageId ? Number(c.order) || 0 : null,
@@ -925,6 +928,11 @@ const closeNode = () => { $('#nodeScrim').hidden = true; };
 let session = null;
 
 let cameFrom = 'deck';
+/* if you committed to 10 a day for this deck, a session is 10 — not the global target */
+function sessionSize(deck) {
+  const h = liveHabits().find((x) => x.deckId === deck.id && x.amount > 0);
+  return h ? h.amount : state.settings.target;
+}
 function startSession(filter = null, studyAhead = false) {
   const deck = activeDeck(); if (!deck) return;
   const today = dayKey();
@@ -946,11 +954,14 @@ function startSession(filter = null, studyAhead = false) {
   const overdueBy = (c) => (c.lastReviewed ? daysBetween(c.lastReviewed, today) - INTERVALS[c.box] : 0);
   const scheduled = due.filter((c) => c.box >= 2).sort((a, b) => overdueBy(b) - overdueBy(a));
   const lapsed = shuffle(due.filter((c) => c.box < 2 && c.lastReviewed));
-  const fresh = shuffle(due.filter((c) => c.box < 2 && !c.lastReviewed));
+  /* new material follows the curriculum's own order — the language of business
+     before the theory, the times tables before the algebra */
+  const fresh = due.filter((c) => c.box < 2 && !c.lastReviewed)
+    .sort((a, b) => (a.seq ?? 1e9) - (b.seq ?? 1e9) || String(a.created).localeCompare(String(b.created)));
 
   const queue = isText(deck)
     ? due.sort((a, b) => (a.passageId === b.passageId ? a.order - b.order : String(a.passageId).localeCompare(String(b.passageId))))
-    : [...scheduled, ...lapsed, ...fresh].slice(0, state.settings.target);
+    : [...scheduled, ...lapsed, ...fresh].slice(0, sessionSize(deck));
   session = { queue: isText(deck) ? queue : queue, i: 0, right: 0, wrong: 0, revealed: false, requeued: new Set(), filter, text: isText(deck) };
   $('#sessionDone').hidden = true;
   $('#stage').hidden = session.text;
@@ -1142,8 +1153,10 @@ function finishSession() {
 }
 
 /* ───────────────────────── adding cards ───────────────────────── */
-function addCard({ front, back, category = '', principle = null, source = 'manual', deckId = state.activeDeck }) {
-  const card = normalizeCard({ front, back, category, principle, source, deckId });
+/* Named destructuring silently dropped fields the caller passed — `seq` went
+   missing and new cards came out unordered. Take the whole object. */
+function addCard(fields) {
+  const card = normalizeCard({ category: '', principle: null, source: 'manual', deckId: state.activeDeck, ...fields });
   if (!card.front || !card.back) return null;
   state.cards.unshift(card);
   return card;
@@ -1947,16 +1960,36 @@ function seed() {
     deck = { id: CURRICULUM_DECK, name: 'Business & Economics', color: DECK_COLORS[0], kind: 'curriculum', created: new Date().toISOString() };
     state.decks.unshift(deck);
   }
+  let math = state.decks.find((d) => d.id === MATH_DECK);
+  if (!math) {
+    math = { id: MATH_DECK, name: 'Mental Math', color: DECK_COLORS[4], kind: 'plain', created: new Date().toISOString() };
+    state.decks.push(math);
+  }
+
   if (state.seedVersion < SEED_VERSION) {
+    const mathHave = existingFronts(MATH_DECK);
+    [...MATH_CARDS].reverse().forEach((c, revIdx) => {
+      const key = c.front.trim().toLowerCase();
+      if (mathHave.has(key)) return;
+      addCard({ ...c, deckId: MATH_DECK, source: 'seed', seq: MATH_CARDS.length - 1 - revIdx });
+      mathHave.add(key);
+    });
+
     const have = existingFronts(CURRICULUM_DECK);
     let added = 0;
     /* push in curriculum order so the deck reads top-down */
-    for (const c of [...CURRICULUM_CARDS].reverse()) {
-      if (have.has(c.front.trim().toLowerCase())) continue;
-      addCard({ ...c, deckId: CURRICULUM_DECK, source: 'seed' });
+    const total = CURRICULUM_CARDS.length;
+    [...CURRICULUM_CARDS].reverse().forEach((c, revIdx) => {
+      if (have.has(c.front.trim().toLowerCase())) return;
+      addCard({ ...c, deckId: CURRICULUM_DECK, source: 'seed', seq: total - 1 - revIdx });
       have.add(c.front.trim().toLowerCase());
       added++;
-    }
+    });
+    /* existing cards from an earlier seed have no position — give them one */
+    const orderOf = new Map(CURRICULUM_CARDS.map((c, i) => [c.front.trim().toLowerCase(), i]));
+    deckCards(CURRICULUM_DECK).forEach((c) => {
+      if (c.seq == null && orderOf.has(c.front.trim().toLowerCase())) c.seq = orderOf.get(c.front.trim().toLowerCase());
+    });
     /* tag any pre-existing card that matches a curriculum front */
     const byFront = new Map(CURRICULUM_CARDS.map((c) => [c.front.trim().toLowerCase(), c]));
     deckCards(CURRICULUM_DECK).forEach((c) => {
