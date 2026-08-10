@@ -14,7 +14,7 @@ const BOX_COUNT = 5;
 const INTERVALS = { 1: 0, 2: 2, 3: 4, 4: 8, 5: 16 };
 const CURRICULUM_DECK = 'deck-business';
 const MATH_DECK = 'deck-math';
-const SEED_VERSION = 4;   // bump whenever curriculum.js gains cards, or installs never see them
+const SEED_VERSION = 5;   // bump whenever curriculum.js gains cards, or installs never see them
 
 const DECK_COLORS = ['#6d8340', '#3f7d78', '#8a5a9e', '#b06a35', '#3f6ba8', '#a8496a', '#7a7f45', '#4a7f4f'];
 
@@ -1985,18 +1985,25 @@ function seed() {
       have.add(c.front.trim().toLowerCase());
       added++;
     });
-    /* existing cards from an earlier seed have no position — give them one */
-    const orderOf = new Map(CURRICULUM_CARDS.map((c, i) => [c.front.trim().toLowerCase(), i]));
+    /* Re-tag everything against the current curriculum: order, phase, principle.
+       The curriculum was reordered, so a card's old position is meaningless. */
+    const byFront = new Map(CURRICULUM_CARDS.map((c, i) => [c.front.trim().toLowerCase(), { ...c, i }]));
     deckCards(CURRICULUM_DECK).forEach((c) => {
-      if (c.seq == null && orderOf.has(c.front.trim().toLowerCase())) c.seq = orderOf.get(c.front.trim().toLowerCase());
-    });
-    /* tag any pre-existing card that matches a curriculum front */
-    const byFront = new Map(CURRICULUM_CARDS.map((c) => [c.front.trim().toLowerCase(), c]));
-    deckCards(CURRICULUM_DECK).forEach((c) => {
-      if (c.principle) return;
       const match = byFront.get(c.front.trim().toLowerCase());
-      if (match) { c.principle = match.principle; c.category = match.category; }
+      if (match) { c.seq = match.i; c.principle = match.principle; c.category = match.category; }
     });
+
+    /* Cards from a previous curriculum that no longer exist: drop the ones you
+       have never seen, keep any you have studied. Progress is never discarded
+       to tidy up. */
+    const before = state.cards.length;
+    state.cards = state.cards.filter((c) => {
+      if (c.deckId !== CURRICULUM_DECK || c.source !== 'seed') return true;
+      if (byFront.has(c.front.trim().toLowerCase())) return true;
+      return c.seen > 0;
+    });
+    const pruned = before - state.cards.length;
+    if (pruned) console.info(`Curriculum: retired ${pruned} unseen cards from the old ordering.`);
     state.seedVersion = SEED_VERSION;
     if (added) console.info(`Learn Things Good: added ${added} curriculum cards.`);
   }
