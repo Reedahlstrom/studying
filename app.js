@@ -29,7 +29,7 @@ const daysBetween = (a, b) => Math.round((keyToDate(b) - keyToDate(a)) / 8640000
 /* ───────────────────────── state ───────────────────────── */
 const defaultState = () => ({
   decks: [], cards: [], passages: [], activeDeck: null,
-  habits: [], goals: [], log: {},
+  habits: [], goals: [], log: {}, planted: [],
   settings: { target: 15, theme: 'light', requeue: false, apiKey: '' },
   streak: { count: 0, last: null },
   daily: { day: null, count: 0 },
@@ -518,7 +518,7 @@ function renderDeckSuggestions(habits) {
   $('#suggest').hidden = !unlinked.length;
   $('#suggestRow').innerHTML = unlinked.map((d) => `<button class="sugg" data-seed-deck="${d.id}">
       <span class="sugg-plus">+</span>
-      <span><b>${esc(d.name)}</b><em>${isText(d) ? 'a line a day' : `${state.settings.target} cards a day`}</em></span>
+      <span><b>${esc(d.name)}</b><em>${isText(d) ? 'a line a day' : `${deckDaily(d)} cards a day`}</em></span>
     </button>`).join('');
   $$('#suggestRow [data-seed-deck]').forEach((b) => b.addEventListener('click', () => {
     const deck = state.decks.find((d) => d.id === b.dataset.seedDeck);
@@ -528,7 +528,7 @@ function renderDeckSuggestions(habits) {
       id: 'h-' + uid().slice(0, 8), created: new Date().toISOString(),
       name: deck.name, floor: isText(deck) ? 'one line' : '5 cards',
       cadence: 'daily', goalId: (state.goals || [])[0]?.id || null, deckId: deck.id,
-      amount: isText(deck) ? 1 : state.settings.target, gate: true,
+      amount: deckDaily(deck), gate: true,
     });
     save(); buzz(14); renderToday();
     toast(`${deck.name} added.`, 'good');
@@ -609,14 +609,20 @@ function progressCard(h) {
 
 
 /* ───────────────────────── decks view ───────────────────────── */
+/* What this deck still owes tonight. Each deck keeps its own pace and its own
+   count — a global target split across decks made mental math ask for fifteen
+   when it was built for ten, and let one deck eat another's quota. */
+function deckLeftTonight(d, today) {
+  const due = deckCards(d.id).filter((c) => isDue(c, today)).length;
+  return Math.max(0, Math.min(due, sessionSize(d) - reviewedInDeckToday(d.id, today)));
+}
 function renderDecks() {
   const today = dayKey();
   releaseDailyLines();
   const dueAll = state.cards.filter((c) => isDue(c, today));
-  const reviewedToday = todayCount(), nightlyTarget = state.settings.target;
   /* only tonight's slice — the full backlog is discouraging and not actionable */
-  const leftTonight = Math.max(0, Math.min(dueAll.length, nightlyTarget - reviewedToday));
-  const finished = dueAll.length === 0 || reviewedToday >= nightlyTarget;
+  const leftTonight = state.decks.reduce((n, d) => n + deckLeftTonight(d, today), 0);
+  const finished = leftTonight === 0;
 
   $('.due-count').classList.toggle('done', finished);
   $('#dueBig').textContent = finished ? '' : leftTonight;
@@ -627,21 +633,19 @@ function renderDecks() {
   $('#heroSub').textContent = state.decks.length > 1 ? `across ${state.decks.length} decks` : 'ready when you are';
 
   /* gate status — mirrors what the blocker extension sees */
-  const reviewed = todayCount(), target = state.settings.target;
-  const done = dueAll.length === 0 || reviewed >= target;
+  const reviewed = todayCount();
   const gate = $('#gate');
   gate.hidden = false;
-  gate.classList.toggle('open', done);
-  $('#gateText').textContent = done
+  gate.classList.toggle('open', finished);
+  $('#gateText').textContent = finished
     ? `Done for today — ${reviewed} reviewed. The gate is open.`
-    : `${Math.max(0, Math.min(dueAll.length, target - reviewed))} more to unlock today · ${reviewed}/${target}`;
+    : `${leftTonight} more to unlock today`;
 
   renderHarvest(finished);
 
   $('#deckGrid').innerHTML = state.decks.map((d, i) => {
     const cards = deckCards(d.id);
-    const due = cards.filter((c) => isDue(c, today)).length;
-    const dueTonight = Math.min(due, leftTonight);   // tonight's slice, not the backlog
+    const dueTonight = deckLeftTonight(d, today);    // tonight's slice, not the backlog
     const mastered = cards.filter((c) => c.mastered).length;
     const pct = cards.length ? Math.round((mastered / cards.length) * 100) : 0;
     const didHere = (state.daily && state.daily.day === today && state.daily.decks && state.daily.decks[d.id]) || 0;
@@ -755,7 +759,6 @@ function renderDeck() {
   const cards = deckCards(deck.id);
   const due = cards.filter((c) => isDue(c, today));
   const mastered = cards.filter((c) => c.mastered);
-  const target = state.settings.target;
 
   $('#deckKindLabel').textContent = isCurriculum(deck) ? 'Guided curriculum' : 'Deck';
   $('#deckTitle').textContent = deck.name;
@@ -776,7 +779,7 @@ function renderDeck() {
     btn.dataset.action = 'ahead';
     btn.disabled = cards.every((c) => c.mastered);
   } else {
-    const tonight = Math.max(1, Math.min(due.length, target - todayCount()));
+    const tonight = Math.max(1, deckLeftTonight(deck, today));
     const unit = isText(deck) ? 'line' : 'card';
     $('#deckSub').textContent = `${tonight} ${unit}${tonight === 1 ? '' : 's'} due today.`;
     btn.querySelector('span').textContent = 'Start session';
@@ -929,9 +932,17 @@ let session = null;
 
 let cameFrom = 'deck';
 /* if you committed to 10 a day for this deck, a session is 10 — not the global target */
+/* What a deck asks for in a night, before any habit overrides it. A deck can
+   carry its own pace (mental math wants ten, not fifteen); otherwise the
+   global target applies. */
+function deckDaily(deck) {
+  if (!deck) return state.settings.target;
+  if (isText(deck)) return 1;
+  return deck.daily || state.settings.target;
+}
 function sessionSize(deck) {
   const h = liveHabits().find((x) => x.deckId === deck.id && x.amount > 0);
-  return h ? h.amount : state.settings.target;
+  return h ? h.amount : deckDaily(deck);
 }
 function startSession(filter = null, studyAhead = false) {
   const deck = activeDeck(); if (!deck) return;
@@ -1965,6 +1976,8 @@ function seed() {
     math = { id: MATH_DECK, name: 'Mental Math', color: DECK_COLORS[4], kind: 'plain', created: new Date().toISOString() };
     state.decks.push(math);
   }
+  /* Built for ten a night — arithmetic sticks by repetition, not volume. */
+  if (!math.daily) math.daily = 10;
 
   if (state.seedVersion < SEED_VERSION) {
     const mathHave = existingFronts(MATH_DECK);
@@ -2007,6 +2020,23 @@ function seed() {
     state.seedVersion = SEED_VERSION;
     if (added) console.info(`Learn Things Good: added ${added} curriculum cards.`);
   }
+
+  /* A seeded deck with no seed on the Goals page is a deck you never find.
+     Plant one the first time the deck appears — but never re-plant one you
+     deliberately deleted, and never touch a habit you have already tuned. */
+  state.habits = state.habits || [];
+  state.planted = state.planted || [];
+  [math, deck].forEach((d) => {
+    if (!d || state.planted.includes(d.id)) return;
+    state.planted.push(d.id);
+    if (state.habits.some((h) => h.deckId === d.id)) return;
+    state.habits.push({
+      id: 'h-' + uid().slice(0, 8), created: new Date().toISOString(),
+      name: d.name, floor: d.id === MATH_DECK ? '3 cards' : '5 cards',
+      cadence: 'daily', goalId: (state.goals || [])[0]?.id || null, deckId: d.id,
+      amount: deckDaily(d), gate: true,
+    });
+  });
   if (!state.activeDeck) state.activeDeck = null;
   save();
 }
