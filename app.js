@@ -225,7 +225,10 @@ function syncLinkedHabits() {
    it from first letters, then type it. After that it rides the same
    Leitner boxes as everything else.
    Stages: 0 read · 1 first letters · 2 type it · 3 learned (review). */
-const STAGE_LABEL = ['Read it', 'From first letters', 'Type it out', 'Type it out'];
+const STAGE_LABEL = ['Read it', 'From the first letters', 'Type it from memory', 'Type it from memory'];
+/* How far through a line's rungs each stage sits, so the progress bar moves
+   as you climb instead of sitting frozen while the same line comes back. */
+const STAGE_PROGRESS = [0, 0.34, 0.67, 0.67];
 const passagesIn = (deckId) => (state.passages || []).filter((p) => p.deckId === deckId);
 const chunksOf = (passageId) => state.cards.filter((c) => c.passageId === passageId)
   .sort((a, b) => a.order - b.order);
@@ -288,8 +291,10 @@ function releaseDailyLines() {
 function advanceChunk(card, ok) {
   card.seen += 1;
   if (card.stage === 0) {                       // reading
+    /* One read, then straight to recall. Showing the identical line twice in
+       a row taught nothing and made the ladder feel stuck. */
     card.reps = (card.reps || 0) + 1;
-    if (card.reps >= 2) card.stage = 1;
+    card.stage = 1;
   } else if (card.stage === 1) {                // first letters
     if (ok) card.stage = 2; else card.reps = 0;
   } else {                                      // typing — the real test
@@ -425,6 +430,57 @@ function goalStrip(seeds, log, today) {
   return `<div class="strip">${cells.join('')}</div>`;
 }
 
+function treeTended(g, t) {
+  const tended = t.idle === null ? 'Not started'
+    : t.idle === 0 ? 'Tended today' : t.idle === 1 ? 'Tended yesterday'
+    : `Untended ${t.idle} days`;
+  return `${tended}${t.sessions ? ` · ${t.sessions} session${t.sessions === 1 ? '' : 's'}` : ''}${g.targetDate ? ` · aiming for ${humanDate(g.targetDate)}` : ''}`;
+}
+
+/* Ticking one seed used to rebuild the whole grove, so every tree remounted:
+   growth animations replayed and the page jumped under your thumb. When the
+   shape of the grove hasn't changed, patch the parts that actually moved and
+   leave the DOM — and its animations — alone. */
+let groveSig = null;
+function groveSignature(goals, habits) {
+  return goals.map((g) => g.id + '>' + habits.filter((h) => h.goalId === g.id).map((h) => h.id).join(',')).join('|')
+    + '#' + habits.filter((h) => !h.goalId).map((h) => h.id).join(',');
+}
+function patchGrove(goals, habits, log, today) {
+  goals.forEach((g) => {
+    const card = $(`#grove [data-tree="${g.id}"]`); if (!card) return;
+    const seeds = habits.filter((h) => h.goalId === g.id);
+    const t = treeState(g);
+    card.classList.toggle('tended', !!(seeds.length && seeds.every((h) => didOn(log, h.id, today))));
+    card.classList.toggle('fading', t.health < 0.5);
+    const holder = card.querySelector('.goal-tree');
+    /* Only redraw the tree when it genuinely grew — that is the one moment
+       the animation is worth playing. */
+    if (holder && Number(holder.dataset.stage) !== t.stage) {
+      holder.dataset.stage = t.stage;
+      holder.innerHTML = treeSVG(t);
+      holder.classList.remove('grew'); void holder.offsetWidth; holder.classList.add('grew');
+    } else if (holder) {
+      const svg = holder.firstElementChild;
+      if (svg) svg.style.setProperty('--health', t.health);
+    }
+    const tended = card.querySelector('.tree-tended');
+    if (tended) { tended.textContent = treeTended(g, t); tended.classList.toggle('warn', t.idle >= 2); }
+    const strip = card.querySelector('.strip');
+    if (strip) strip.outerHTML = goalStrip(seeds, log, today);
+  });
+  habits.forEach((h) => {
+    const row = $(`#grove .seed[data-act="${h.id}"]`); if (!row) return;
+    const done = didOn(log, h.id, today);
+    row.classList.toggle('done', done);
+    const fresh = document.createElement('div');
+    fresh.innerHTML = seedRow(h, log, today);
+    const body = fresh.querySelector('.seed-body');
+    const cur = row.querySelector('.seed-body');
+    if (body && cur && body.innerHTML !== cur.innerHTML) cur.innerHTML = body.innerHTML;
+  });
+}
+
 function renderToday() {
   const today = dayKey();
   syncLinkedHabits();
@@ -442,6 +498,8 @@ function renderToday() {
     : 'Nothing owed today';
   $('#todayLine').classList.toggle('done', habits.length > 0 && !blockers.length && doneCount > 0);
 
+  renderHarvest(habits.length > 0 && !blockers.length);
+
   const gate = $('#gate');
   gate.hidden = !habits.some((h) => h.gate);
   gate.classList.toggle('open', !blockers.length);
@@ -449,20 +507,26 @@ function renderToday() {
     ? `${blockers.map((h) => h.name).join(', ')} — then the gate opens`
     : 'The gate is open.';
 
-  const cards = (state.goals || []).map((g) => {
+  const goals = state.goals || [];
+  const sig = groveSignature(goals, habits);
+  if (sig === groveSig && $('#grove').children.length) {
+    patchGrove(goals, habits, log, today);
+    renderDeckSuggestions(habits);
+    return;
+  }
+  groveSig = sig;
+
+  const cards = goals.map((g) => {
     const seeds = habits.filter((h) => h.goalId === g.id);
     const t = treeState(g);
     const allDone = seeds.length && seeds.every((h) => didOn(log, h.id, today));
-    const tended = t.idle === null ? 'Not started'
-      : t.idle === 0 ? 'Tended today' : t.idle === 1 ? 'Tended yesterday'
-      : `Untended ${t.idle} days`;
-    return `<article class="tree-card ${allDone ? 'tended' : ''} ${t.health < 0.5 ? 'fading' : ''}">
+    return `<article class="tree-card ${allDone ? 'tended' : ''} ${t.health < 0.5 ? 'fading' : ''}" data-tree="${g.id}">
       <div class="tree-top" data-goal="${g.id}">
-        <div class="goal-tree">${treeSVG(t)}</div>
+        <div class="goal-tree" data-stage="${t.stage}">${treeSVG(t)}</div>
         <div class="tree-meta">
           <h2 class="tree-name">${esc(g.name)}</h2>
           ${g.why ? `<p class="tree-why">${esc(g.why)}</p>` : ''}
-          <p class="tree-tended ${t.idle >= 2 ? 'warn' : ''}">${tended}${t.sessions ? ` · ${t.sessions} session${t.sessions === 1 ? '' : 's'}` : ''}${g.targetDate ? ` · aiming for ${humanDate(g.targetDate)}` : ''}</p>
+          <p class="tree-tended ${t.idle >= 2 ? 'warn' : ''}">${treeTended(g, t)}</p>
           ${goalStrip(seeds, log, today)}
         </div>
       </div>
@@ -632,16 +696,9 @@ function renderDecks() {
   $('#greeting').textContent = greetingText();
   $('#heroSub').textContent = state.decks.length > 1 ? `across ${state.decks.length} decks` : 'ready when you are';
 
-  /* gate status — mirrors what the blocker extension sees */
-  const reviewed = todayCount();
-  const gate = $('#gate');
-  gate.hidden = false;
-  gate.classList.toggle('open', finished);
-  $('#gateText').textContent = finished
-    ? `Done for today — ${reviewed} reviewed. The gate is open.`
-    : `${leftTonight} more to unlock today`;
-
-  renderHarvest(finished);
+  /* The gate and the harvest live on Goals and are computed from habits.
+     This view used to write to both — invisible from here, and it clobbered
+     what Goals had worked out. One owner per element. */
 
   $('#deckGrid').innerHTML = state.decks.map((d, i) => {
     const cards = deckCards(d.id);
@@ -716,8 +773,13 @@ function renderHarvest(finished) {
     if (!deck) continue;
     isText(deck) ? (linesDone += n) : (cardsDone += n);
   }
+  /* Seeds that aren't decks — guitar, journaling — are real work too. A day
+     spent on those used to report as nothing done. */
+  const log = state.log || {};
+  const seedsDone = liveHabits().filter((h) => !h.deckId && didOn(log, h.id, today)).length;
+
   /* a reward for a day you did nothing would be hollow */
-  if (!finished || cardsDone + linesDone === 0) { box.hidden = true; return; }
+  if (!finished || cardsDone + linesDone + seedsDone === 0) { box.hidden = true; return; }
 
   const streak = liveStreak();
   box.hidden = false;
@@ -727,6 +789,7 @@ function renderHarvest(finished) {
   const bits = [];
   if (cardsDone) bits.push(`${cardsDone} card${cardsDone === 1 ? '' : 's'}`);
   if (linesDone) bits.push(`${linesDone} line${linesDone === 1 ? '' : 's'}`);
+  if (seedsDone) bits.push(`${seedsDone} seed${seedsDone === 1 ? '' : 's'}`);
   $('#harvestLine').textContent = bits.join(' · ') + ' today';
 
   /* direction: what today actually bought you */
@@ -769,8 +832,10 @@ function renderDeck() {
 
   const btn = $('#deckStart');
   if (!cards.length) {
-    $('#deckSub').textContent = 'Empty deck. Add cards, paste a list, or make some from your notes.';
-    btn.querySelector('span').textContent = 'Add cards';
+    $('#deckSub').textContent = isText(deck)
+      ? 'Nothing to memorize yet. Paste a passage and it will be broken into lines.'
+      : 'Empty deck. Add cards, paste a list, or make some from your notes.';
+    btn.querySelector('span').textContent = isText(deck) ? 'Paste a passage' : 'Add cards';
     btn.dataset.action = 'add'; btn.disabled = false;
   } else if (!due.length) {
     const next = upcoming(cards);
@@ -940,7 +1005,11 @@ function deckDaily(deck) {
   if (isText(deck)) return 1;
   return deck.daily || state.settings.target;
 }
+/* A passage's nightly dose is set in words by introduceChunks, not in lines,
+   so a text deck serves every line it released. Capping it at the habit's
+   "a line a day" made the deck promise 1 and the session serve 3. */
 function sessionSize(deck) {
+  if (isText(deck)) return deckCards(deck.id).filter((c) => isDue(c, dayKey())).length || 1;
   const h = liveHabits().find((x) => x.deckId === deck.id && x.amount > 0);
   return h ? h.amount : deckDaily(deck);
 }
@@ -995,6 +1064,7 @@ function showCard() {
   const label = card.category || (activeDeck() || {}).name || '';
   $('#cardCat').textContent = label;
   $('#cardCat').hidden = !label;
+  $('#cardBox').hidden = false;
   $('#cardBox').textContent = `Box ${card.box}`;
   $('.tap-hint').textContent = 'tap to reveal';
   const total = session.queue.length;
@@ -1012,16 +1082,28 @@ function showChunk() {
   const passage = (state.passages || []).find((p) => p.id === card.passageId);
   const stage = card.stage;
 
-  $('#memPassage').textContent = passage ? passage.title : 'Passage';
-  $('#memStage').textContent = stage === 0 ? `Read it (${(card.reps || 0) + 1} of 2)` : STAGE_LABEL[stage];
+  /* A line still being learned has no box yet — showing "Box 1" made the
+     ladder look like it had already failed you. */
+  $('#cardBox').hidden = card.stage < 3;
+  $('#cardBox').textContent = `Box ${card.box}`;
+
+  const lineNo = (card.order ?? 0) + 1;
+  const lineCount = passage ? chunksOf(passage.id).length : 0;
+  $('#memPassage').textContent = passage
+    ? `${passage.title} · line ${lineNo}${lineCount ? ` of ${lineCount}` : ''}`
+    : 'Passage';
+  $('#memStage').textContent = STAGE_LABEL[stage];
   $('#memDiff').hidden = true;
   $('#memDiff').innerHTML = '';
   const input = $('#memInput');
   input.value = '';
 
+  /* The counter used to sit on the line number while you climbed three rungs
+     of the same line — four screens, no movement. Count the rungs too. */
   const total = session.queue.length;
+  const climbed = session.i + (STAGE_PROGRESS[stage] ?? 0);
   $('#progressText').textContent = `${session.i + 1} / ${total}`;
-  $('#progressFill').style.width = `${(session.i / total) * 100}%`;
+  $('#progressFill').style.width = `${(climbed / total) * 100}%`;
 
   const text = $('#memText');
   if (stage === 0) {
@@ -1042,6 +1124,19 @@ function showChunk() {
       '<button class="btn primary" data-mem="check">Check</button>';
     setTimeout(() => input.focus(), 80);
   }
+  /* You were learning line 7 having never seen the piece whole. The context
+     is collapsed by default so it can't be used as a crutch. */
+  const ctx = $('#memContext'), ctxBtn = $('#memContextBtn');
+  ctx.hidden = true;
+  ctxBtn.textContent = 'Show the whole passage';
+  ctxBtn.hidden = !passage;
+  if (passage) {
+    ctx.innerHTML = chunksOf(passage.id).map((c) => {
+      const state = c.mastered ? 'done' : c.id === card.id ? 'here' : c.intro ? 'seen' : 'later';
+      return `<span class="ctx-line ${state}">${esc(c.front)}</span>`;
+    }).join(' ');
+  }
+
   $('#memorize').classList.remove('enter'); void $('#memorize').offsetWidth; $('#memorize').classList.add('enter');
 }
 
@@ -1054,6 +1149,13 @@ function memAction(what) {
   if (what === 'hint') { $('#memDiff').hidden = false; $('#memDiff').innerHTML = `<span class="cue-inline">${esc(firstLetters(card.front))}</span>`; return; }
 
   if (what === 'check') {
+    /* Checking an empty box used to count as a miss and knock the line back a
+       rung. Nothing typed is not a wrong answer. */
+    if (!$('#memInput').value.trim()) {
+      toast('Type what you remember first.', 'bad');
+      $('#memInput').focus();
+      return;
+    }
     const result = gradeTyping(card.front, $('#memInput').value);
     $('#memDiff').hidden = false;
     $('#memDiff').innerHTML = result.marks.map((m) => `<span class="${m.ok ? 'ok' : 'no'}">${esc(m.word)}</span>`).join(' ');
@@ -1070,7 +1172,18 @@ function memAction(what) {
   }
 
   if (what === 'read') { advanceChunk(card, true); return showChunk(); }
-  if (what === 'recalled') { advanceChunk(card, true); return showChunk(); }
+  if (what === 'recalled') {
+    /* Self-grading blind is worthless — show the line so "I said it right"
+       means something, then move on. */
+    const text = $('#memText');
+    if (text.classList.contains('cue')) {
+      text.classList.remove('cue');
+      text.textContent = card.front;
+      $('#memActions').innerHTML = '<button class="btn primary" data-mem="recalled">That matches — next</button>';
+      return;
+    }
+    advanceChunk(card, true); return showChunk();
+  }
   if (what === 'continue') return nextChunk();
 }
 
@@ -1142,7 +1255,10 @@ function finishSession() {
   const ring = $('#doneRing');
   ring.style.strokeDashoffset = 327;
   requestAnimationFrame(() => { ring.style.strokeDashoffset = 327 - (327 * pct) / 100; });
-  const stillDue = deckCards().filter((c) => isDue(c)).length;
+  /* "Still waiting" used to count every untouched card in the deck — 455 of
+     them — which reads as a debt when it is really just the deck's future.
+     Only cards you have actually met and owe a review can be behind. */
+  const owed = deckCards().filter((c) => isDue(c) && c.lastReviewed).length;
   /* what the work bought you, and where it goes next — direction beats a score */
   const touched = (session.queue || []).filter((c) => c.lastReviewed === dayKey());
   const moved = touched.filter((c) => c.box > 1 && !c.mastered).length;
@@ -1154,11 +1270,16 @@ function finishSession() {
     parts.push(`${session.right} right, ${session.wrong} missed`);
     if (moved) parts.push(`${moved} moved up a box`);
     if (retired) parts.push(`${retired} retired for good`);
-    if (stillDue) parts.push(`${stillDue} still waiting here`);
+    if (owed) parts.push(`${owed} review${owed === 1 ? '' : 's'} still waiting`);
     else if (next && next !== 'today') parts.push(`next review ${next}`);
   }
   $('#doneSummary').textContent = parts.join(' · ');
-  $('#doneAgain').hidden = stillDue === 0;
+  /* Finishing the night is the win. Going again is allowed but never the
+     default, and it is labelled for what it is. */
+  const again = $('#doneAgain');
+  again.hidden = false;
+  again.textContent = owed ? 'Clear the rest' : 'Study ahead';
+  again.classList.toggle('quiet', owed === 0);
   session = null;
   save();
 }
@@ -1578,6 +1699,9 @@ function setupAdd() {
     refreshEstimate();
     toast(`Added "${p.title}" — ${n} lines to learn.`, 'good');
     buzz(20);
+    /* Adding a passage used to leave you on an empty form with no idea what
+       happened next. Land on the deck, where tonight's lines are waiting. */
+    go('deck');
   });
 
   $('#reviewNone').addEventListener('click', () => { pending = []; $('#reviewScrim').hidden = true; });
@@ -2091,6 +2215,11 @@ function boot() {
   $('#memInput').addEventListener('keydown', (e) => {
     if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); memAction('check'); }
   });
+  $('#memContextBtn').addEventListener('click', () => {
+    const ctx = $('#memContext');
+    ctx.hidden = !ctx.hidden;
+    $('#memContextBtn').textContent = ctx.hidden ? 'Show the whole passage' : 'Hide the passage';
+  });
 
   const fc = $('#flashcard');
   fc.addEventListener('click', reveal);
@@ -2100,7 +2229,10 @@ function boot() {
   /* go back where you came from, not always to the deck page */
   $('#endSession').addEventListener('click', () => go(cameFrom));
   $('#doneHome').addEventListener('click', () => go(cameFrom));
-  $('#doneAgain').addEventListener('click', () => startSession(session ? session.filter : null));
+  /* session is cleared by the time this fires, so the old `session.filter`
+     read was always null — and without studyAhead the call quietly did
+     nothing once the night's work was finished. */
+  $('#doneAgain').addEventListener('click', () => startSession(null, true));
 
   let sx = 0, sy = 0, tracking = false;
   fc.addEventListener('touchstart', (e) => { sx = e.touches[0].clientX; sy = e.touches[0].clientY; tracking = true; }, { passive: true });

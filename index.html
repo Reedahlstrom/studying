@@ -150,7 +150,7 @@
       </div>
     </div>
 
-    <!-- memorising a passage: read → first letters → type it -->
+    <!-- memorizing a passage: read → first letters → type it -->
     <div class="memorize" id="memorize" hidden>
       <div class="mem-head">
         <span class="cat-chip" id="memPassage">Passage</span>
@@ -160,6 +160,8 @@
       <textarea class="mem-input" id="memInput" rows="4" placeholder="Type it from memory…" spellcheck="false" hidden></textarea>
       <div class="mem-diff" id="memDiff" hidden></div>
       <div class="mem-actions" id="memActions"></div>
+      <button class="mem-context-btn" id="memContextBtn" type="button">Show the whole passage</button>
+      <div class="mem-context" id="memContext" hidden></div>
     </div>
 
     <div class="answer-row" id="answerRow">
@@ -249,7 +251,7 @@ opportunity cost&#9;what you gave up"></textarea></label>
       <label class="field"><span>What is it called</span>
         <input id="mTitle" placeholder="Gettysburg Address, Psalm 23, the opening of your pitch…" /></label>
       <label class="field"><span>Paste the text</span>
-        <textarea id="mText" rows="8" placeholder="Paste the passage exactly as you want to memorise it — punctuation and all."></textarea></label>
+        <textarea id="mText" rows="8" placeholder="Paste the passage exactly as you want to memorize it — punctuation and all."></textarea></label>
       <div id="mEstimate" class="estimate" hidden></div>
       <div class="form-actions">
         <span class="added-count" id="mCount"></span>
@@ -385,7 +387,7 @@ opportunity cost&#9;what you gave up"></textarea></label>
     <div class="field" id="dKindField"><span>What goes in it</span>
       <div class="seg" id="dKindSeg">
         <button class="seg-btn on" type="button" data-kind="plain">Cards</button>
-        <button class="seg-btn" type="button" data-kind="text">Text to memorise</button>
+        <button class="seg-btn" type="button" data-kind="text">Text to memorize</button>
         <span class="seg-thumb" id="dKindThumb"></span>
       </div>
     </div>

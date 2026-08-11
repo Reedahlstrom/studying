@@ -1,5 +1,5 @@
 /* ══════════════════════════════════════════════════════════════
-   Passages — memorising text verbatim.
+   Passages — memorizing text verbatim.
 
    Pure logic only: splitting text into memorable chunks, rendering
    first-letter cues, grading what you typed, and estimating how long
@@ -24,7 +24,7 @@ export const wordsIn = (text) => (String(text).trim().match(/\S+/g) || []).lengt
 /* ── chunking ──────────────────────────────────────────────────
    Break on sentences first, then on clause punctuation if a sentence
    runs long. Never split mid-clause — a chunk you cannot say in one
-   breath is a chunk you cannot memorise. */
+   breath is a chunk you cannot memorize. */
 export function chunkText(text, targetWords = 12) {
   const clean = String(text).replace(/\s+/g, ' ').trim();
   if (!clean) return [];
@@ -60,7 +60,7 @@ export function chunkText(text, targetWords = 12) {
 
 /* ── first-letter cue ──────────────────────────────────────────
    "The quick brown fox." → "T q b f."  Punctuation and numbers stay,
-   because they are part of what you are memorising. */
+   because they are part of what you are memorizing. */
 export function firstLetters(text) {
   return String(text).replace(/\s+/g, ' ').trim().split(' ').map((word) => {
     const m = word.match(/^(\W*)(\w)(\w*)(\W*)$/);

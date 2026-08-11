@@ -273,8 +273,6 @@ kbd { font: 500 11px/1 ui-monospace, monospace; padding: 3px 5px; border-radius:
 
 /* ══════════ goals ══════════ */
 .goal-list { display: grid; gap: 11px; margin-bottom: 14px; }
-.goal-card { padding: 18px; border-radius: var(--r-lg); background: var(--bg-elev); border: 1px solid var(--line-soft); box-shadow: var(--shadow); cursor: pointer; animation: riseIn .4s var(--ease) both; transition: transform .28s var(--spring); }
-.goal-card:hover { transform: translateY(-2px); }
 .goal-name { font-size: 17px; font-weight: 660; letter-spacing: -.02em; }
 .goal-why { font-size: 13.5px; color: var(--text-dim); margin-top: 4px; font-style: italic; }
 .goal-line { font-size: 13px; color: var(--olive-deep); font-weight: 550; margin-top: 9px; font-variant-numeric: tabular-nums; }
@@ -841,7 +839,6 @@ select { padding-right: 38px; cursor: pointer; }
 /* ══════════ the goal tree ══════════
    Grows with the work, greys when untended. It never shrinks — the
    sessions happened, and taking them back would be dishonest. */
-.goal-card { display: grid; grid-template-columns: 108px 1fr; gap: 16px; align-items: center; }
 .goal-tree { width: 108px; height: 126px; }
 .goal-tree svg { width: 100%; height: 100%; overflow: visible; }
 .goal-tree .ground {
@@ -866,12 +863,10 @@ select { padding-right: 38px; cursor: pointer; }
   animation: unfurl .6s var(--spring) forwards;
 }
 .goal-tree svg { transition: opacity .6s var(--ease); }
-.goal-card.fading .goal-tree svg { opacity: .8; }
-
-.goal-tended { font-size: 12px; color: var(--text-faint); margin-top: 6px; }
-.goal-tended.warn { color: var(--gold); }
+/* was .goal-card.fading — a class nothing renders, so a neglected tree
+   never actually dimmed */
+.tree-card.fading .goal-tree svg { opacity: .8; }
 @media (max-width: 480px) {
-  .goal-card { grid-template-columns: 84px 1fr; gap: 12px; }
   .goal-tree { width: 84px; height: 100px; }
 }
 
@@ -889,39 +884,17 @@ select { padding-right: 38px; cursor: pointer; }
 .goal-detail .goal-why { margin-top: 5px; }
 .goal-detail .goal-line { margin-top: 8px; }
 .btn.small { padding: 8px 14px; font-size: 13.5px; border-radius: 11px; margin-top: 12px; }
-.goal-card.loose { grid-template-columns: 1fr; }
 @media (max-width: 480px) {
   .goal-detail { grid-template-columns: 108px 1fr; gap: 14px; }
   .goal-tree.big { width: 108px; height: 126px; }
 }
 
-/* ══════════ the garden ══════════ */
-.garden-wrap { margin-top: 30px; }
-.garden { display: grid; grid-template-columns: repeat(auto-fill, minmax(148px, 1fr)); gap: 11px; }
-.tree-card {
-  display: grid; justify-items: center; text-align: center; gap: 2px;
-  padding: 16px 12px 15px; border-radius: var(--r-lg);
-  background: var(--bg-elev); border: 1px solid var(--line-soft); box-shadow: var(--shadow);
-  animation: riseIn .4s var(--ease) both;
-  transition: transform .28s var(--spring), border-color .25s, box-shadow .3s;
-}
-.tree-card:hover { transform: translateY(-3px); box-shadow: var(--shadow-lg); border-color: var(--line); }
-.tree-card:active { transform: scale(.98); }
-.tree-card .goal-tree { width: 92px; height: 108px; }
+/* The "garden" grid predates the grove and is gone. Its .tree-card rules
+   still matched, so every tap on a seed scaled the whole card and the tree
+   jumped — the grove's own .tree-card block below is the only one now. */
 .tree-name { font-size: 14px; font-weight: 640; letter-spacing: -.01em; margin-top: 4px; }
 .tree-tended { font-size: 11.5px; color: var(--text-faint); }
 .tree-tended.warn { color: var(--gold); }
-.tree-card.add { border-style: dashed; background: transparent; justify-content: center; }
-.tree-card.add:hover { border-color: var(--olive); }
-.tree-plus {
-  display: grid; place-items: center; width: 44px; height: 44px; border-radius: 14px; margin: 22px 0 12px;
-  background: var(--olive-soft); color: var(--olive-deep); font-size: 24px; font-weight: 700; line-height: 1;
-}
-[data-theme="dark"] .tree-plus { color: var(--olive); }
-@media (max-width: 480px) {
-  .garden { grid-template-columns: 1fr 1fr; gap: 9px; }
-  .tree-card .goal-tree { width: 78px; height: 92px; }
-}
 
 /* ══════════ start-up failure ══════════ */
 .boot-fail {
@@ -1001,3 +974,34 @@ select { padding-right: 38px; cursor: pointer; }
   .seed .tick { width: 32px; height: 32px; }
   .strip { max-width: none; }
 }
+
+/* A tree only replays its growth when it actually grew a stage — every other
+   update patches in place, so the grove no longer flickers under your thumb. */
+.goal-tree.grew { animation: treeGrew .5s var(--spring); }
+@keyframes treeGrew { 0% { transform: scale(.94); } 60% { transform: scale(1.03); } 100% { transform: scale(1); } }
+@media (prefers-reduced-motion: reduce) {
+  .goal-tree.grew { animation: none; }
+}
+
+/* ══════════ memorize: the whole passage, on demand ══════════ */
+.mem-context-btn {
+  justify-self: center; margin-top: 14px; padding: 7px 14px; border-radius: 10px;
+  font-size: 12.5px; font-weight: 560; color: var(--text-faint);
+  background: transparent; border: 1px solid var(--line-soft);
+  transition: color .2s, border-color .2s;
+}
+.mem-context-btn:hover { color: var(--text-dim); border-color: var(--line); }
+.mem-context {
+  margin-top: 12px; padding: 14px 16px; border-radius: 14px;
+  background: var(--bg-elev-2); font-size: 14px; line-height: 1.85; text-wrap: pretty;
+  animation: riseIn .3s var(--ease) both; max-height: 40vh; overflow-y: auto;
+}
+.ctx-line { color: var(--text-faint); }
+.ctx-line.seen { color: var(--text-dim); }
+.ctx-line.done { color: var(--text-dim); }
+.ctx-line.here {
+  color: var(--text); font-weight: 600;
+  background: color-mix(in srgb, var(--olive) 16%, transparent);
+  border-radius: 5px; padding: 1px 3px;
+}
+.ctx-line.later { opacity: .5; }
