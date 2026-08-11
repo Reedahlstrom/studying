@@ -1006,3 +1006,11 @@ select { padding-right: 38px; cursor: pointer; }
   border-radius: 5px; padding: 1px 3px;
 }
 .ctx-line.later { opacity: .5; }
+
+/* The box breakdown: what each box means, and the pool outside the boxes */
+.box-row .n em.every {
+  display: block; font-style: normal; font-size: 10.5px;
+  color: var(--text-faint); font-weight: 500; margin-top: 1px;
+}
+.box-row.pool { opacity: .72; }
+.box-row.pool .bar { background: transparent; border: 1px dashed var(--line); }

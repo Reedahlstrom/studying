@@ -12,6 +12,12 @@ const STORE_KEY = 'ledger.v2';
 const LEGACY_KEY = 'ledger.v1';
 const BOX_COUNT = 5;
 const INTERVALS = { 1: 0, 2: 2, 3: 4, 4: 8, 5: 16 };
+/* Box 1 is the every-day box, so it only works while it stays small. Feeding
+   new cards into a backed-up Box 1 is exactly how a deck stops being a Leitner
+   system and becomes a pile: 455 cards all "due" every night, none of them
+   ever getting the spaced repetition that is the entire point. New cards wait
+   in a pool outside the boxes until Box 1 has room for them. */
+const BOX1_LIMIT = 30;
 const CURRICULUM_DECK = 'deck-business';
 const MATH_DECK = 'deck-math';
 const SEED_VERSION = 5;   // bump whenever curriculum.js gains cards, or installs never see them
@@ -56,7 +62,9 @@ function publishStatus() {
   /* With no gate habits at all, fall back to the flashcard target so the
      blocker keeps working for anyone who has not set habits up yet. */
   const anyGate = habits.some((h) => h.gate);
-  const due = state.cards.filter((c) => isDue(c, today)).length;
+  /* What is genuinely waiting tonight across every deck: reviews owed plus the
+     new cards Box 1 has room for. The old count was the whole unstudied deck. */
+  const due = state.decks.reduce((n, d) => n + deckLeftTonight(d, today), 0);
   const reviewed = todayCount();
   const target = state.settings.target;
   const done = anyGate ? blockers.length === 0 : (due === 0 || reviewed >= target);
@@ -156,6 +164,24 @@ const uid = () => (crypto.randomUUID ? crypto.randomUUID() : 'c' + Date.now().to
    572-card debt on day one. */
 const isNew = (card) => !card.lastReviewed && !card.mastered;
 const isReview = (card, today = dayKey()) => isDue(card, today) && !isNew(card);
+/* A card is in a box only once you have actually studied it. Until then it is
+   in the pool, waiting its turn — it is not a Box 1 card and it is not owed. */
+const inBox = (card, b) => !card.mastered && !!card.lastReviewed && card.box === b;
+const box1Load = (cards) => cards.filter((c) => inBox(c, 1)).length;
+const byOrder = (a, b) => (a.seq ?? 1e9) - (b.seq ?? 1e9) || String(a.created).localeCompare(String(b.created));
+
+/* What tonight actually consists of for a deck: the reviews you owe, plus as
+   many new cards as Box 1 can take. Everything that displays a number goes
+   through here, so the deck page, the Goals seed and the session itself can
+   never disagree about what is waiting. */
+function tonight(deck, today = dayKey(), pool = null) {
+  const all = deckCards(deck.id);
+  const from = pool || all;
+  const reviews = from.filter((c) => isReview(c, today));
+  const room = Math.max(0, BOX1_LIMIT - box1Load(all));
+  const fresh = from.filter(isNew).sort(byOrder).slice(0, room);
+  return { reviews, fresh, room, waiting: from.filter(isNew).length };
+}
 
 function isDue(card, today = dayKey()) {
   if (card.mastered) return false;
@@ -713,8 +739,13 @@ function progressCard(h) {
    count — a global target split across decks made mental math ask for fifteen
    when it was built for ten, and let one deck eat another's quota. */
 function deckLeftTonight(d, today) {
-  const due = deckCards(d.id).filter((c) => isDue(c, today)).length;
-  return Math.max(0, Math.min(due, sessionSize(d) - reviewedInDeckToday(d.id, today)));
+  if (isText(d)) {
+    const due = deckCards(d.id).filter((c) => isDue(c, today)).length;
+    return Math.max(0, Math.min(due, sessionSize(d) - reviewedInDeckToday(d.id, today)));
+  }
+  const { reviews, fresh } = tonight(d, today);
+  const waiting = reviews.length + fresh.length;
+  return Math.max(0, Math.min(waiting, sessionSize(d) - reviewedInDeckToday(d.id, today)));
 }
 function renderDecks() {
   const today = dayKey();
@@ -856,8 +887,9 @@ function renderDeck() {
   const today = dayKey();
   if (isText(deck)) introduceChunks(deck);
   const cards = deckCards(deck.id);
-  const due = cards.filter((c) => isDue(c, today));
   const mastered = cards.filter((c) => c.mastered);
+  const plan = tonight(deck, today);
+  const left = deckLeftTonight(deck, today);
 
   $('#deckKindLabel').textContent = isCurriculum(deck) ? 'Guided curriculum' : 'Deck';
   $('#deckTitle').textContent = deck.name;
@@ -873,33 +905,62 @@ function renderDeck() {
       : 'Empty deck. Add cards, paste a list, or make some from your notes.';
     btn.querySelector('span').textContent = isText(deck) ? 'Paste a passage' : 'Add cards';
     btn.dataset.action = 'add'; btn.disabled = false;
-  } else if (!due.length) {
+  } else if (!left) {
     const next = upcoming(cards);
-    $('#deckSub').textContent = next ? `Nothing due. Next review ${next}.` : 'Every card is mastered. 🎉';
+    const held = !isText(deck) && plan.waiting && !plan.room;
+    const didToday = reviewedInDeckToday(deck.id, today);
+    /* "Nothing due. Next review today." was the old message here — finishing
+       the night's dose is not the same as having nothing left. */
+    $('#deckSub').textContent = held
+      ? `Box 1 is full — clear those before anything new. ${plan.waiting} cards are waiting their turn.`
+      : didToday ? `Done for tonight — ${didToday} card${didToday === 1 ? '' : 's'}.${next && next !== 'today' ? ` Next review ${next}.` : ''}`
+      : next && next !== 'today' ? `Nothing due. Next review ${next}.`
+      : cards.every((c) => c.mastered) ? 'Every card is mastered. 🎉'
+      : 'Nothing due tonight.';
     btn.querySelector('span').textContent = 'Study ahead anyway';
     btn.dataset.action = 'ahead';
     btn.disabled = cards.every((c) => c.mastered);
   } else {
-    const tonight = Math.max(1, deckLeftTonight(deck, today));
     const unit = isText(deck) ? 'line' : 'card';
-    $('#deckSub').textContent = `${tonight} ${unit}${tonight === 1 ? '' : 's'} due today.`;
+    /* Say what tonight is made of. "15 due" over a deck of 465 read as a debt;
+       "8 reviews · 7 new" says what you are actually about to do. */
+    const bits = [];
+    if (!isText(deck)) {
+      const r = Math.min(plan.reviews.length, left);
+      const n = Math.max(0, left - r);
+      if (r) bits.push(`${r} review${r === 1 ? '' : 's'}`);
+      if (n) bits.push(`${n} new`);
+    }
+    $('#deckSub').textContent = bits.length
+      ? `Tonight: ${bits.join(' · ')}.`
+      : `${left} ${unit}${left === 1 ? '' : 's'} due today.`;
     btn.querySelector('span').textContent = 'Start session';
     btn.dataset.action = 'study'; btn.disabled = false;
   }
 
-  const max = Math.max(1, ...[1, 2, 3, 4, 5].map((b) => cards.filter((c) => !c.mastered && c.box === b).length), mastered.length);
-  const rows = [1, 2, 3, 4, 5].map((b) => {
-    const inBox = cards.filter((c) => !c.mastered && c.box === b);
-    const dueN = inBox.filter((c) => isReview(c, today)).length;
-    const newN = inBox.filter(isNew).length;
-    const tail = dueN ? ` · ${dueN} to review` : newN === inBox.length && newN ? ' · not started' : '';
+  /* The boxes hold cards you have actually studied. Everything else is still
+     in the pool, and gets its own row — dumping it into Box 1 was what made a
+     465-card deck look like 455 cards owed every night. */
+  const boxed = [1, 2, 3, 4, 5].map((b) => cards.filter((c) => inBox(c, b)));
+  const waiting = cards.filter(isNew).length;
+  const max = Math.max(1, ...boxed.map((l) => l.length), mastered.length);
+  const rows = boxed.map((list, i) => {
+    const b = i + 1;
+    const dueN = list.filter((c) => isReview(c, today)).length;
+    const every = b === 1 ? 'every day' : `every ${INTERVALS[b]} days`;
     return `<div class="box-row"><b>Box ${b}</b>
-      <div class="bar"><i style="width:${(inBox.length / max) * 100}%"></i></div>
-      <span class="n ${dueN ? 'due' : ''}">${inBox.length}${tail}</span></div>`;
+      <div class="bar"><i style="width:${(list.length / max) * 100}%"></i></div>
+      <span class="n ${dueN ? 'due' : ''}">${list.length}${dueN ? ` · ${dueN} due` : ''}<em class="every">${every}</em></span></div>`;
   });
   rows.push(`<div class="box-row done"><b>Mastered</b>
       <div class="bar"><i style="width:${(mastered.length / max) * 100}%"></i></div>
       <span class="n">${mastered.length}</span></div>`);
+  if (waiting) {
+    const room = Math.max(0, BOX1_LIMIT - boxed[0].length);
+    rows.push(`<div class="box-row pool"><b>Not started</b>
+      <div class="bar"></div>
+      <span class="n">${waiting}<em class="every">${room ? `${Math.min(room, waiting)} can start tonight` : 'Box 1 is full — clear it first'}</em></span></div>`);
+  }
   $('#boxes').innerHTML = rows.join('');
 
   const groups = new Map();
@@ -987,7 +1048,7 @@ function renderPath() {
       const own = cards.filter((c) => c.principle === n.id);
       const m = own.filter((c) => c.mastered).length;
       const seen = own.filter((c) => c.seen).length;
-      const due = own.filter((c) => isDue(c, today)).length;
+      const due = own.filter((c) => isReview(c, today)).length;
       const pct = own.length ? Math.round((m / own.length) * 100) : 0;
       const cls = pct === 100 ? 'done' : m ? 'solid' : seen ? 'started' : '';
       const builds = n.builds.map((b) => (PRINCIPLES.find((x) => x.id === b) || {}).title).filter(Boolean);
@@ -1067,26 +1128,27 @@ function startSession(filter = null, studyAhead = false) {
 
   if (isText(deck)) introduceChunks(deck);
 
-  let due = pool.filter((c) => isDue(c, today));
-  if (!due.length && (studyAhead || filter)) due = pool.filter((c) => !c.mastered && (!c.passageId || c.intro));
+  /* Reviews are owed; new cards are a choice. Box 2+ cards scheduled for
+     tonight come first, then Box 1 (the every-day box), and only then does
+     new material fill what is left — and only while Box 1 has room. */
+  let { reviews, fresh } = tonight(deck, today, pool);
+  const overdueBy = (c) => daysBetween(c.lastReviewed, today) - INTERVALS[c.box];
+  const scheduled = reviews.filter((c) => c.box >= 2).sort((a, b) => overdueBy(b) - overdueBy(a));
+  const lapsed = shuffle(reviews.filter((c) => c.box === 1));
 
-  /* passages are learned in order — shuffling a poem is nonsense */
-  /* Order matters. Picking at random from everything due let 400 Box 1 cards
-     crowd out the handful genuinely scheduled for tonight, so a card timed for
-     day 8 might not resurface for weeks — which defeats the whole point.
-     Scheduled reviews come first, then cards you have lapsed on, then new
-     material fills whatever is left. */
-  const overdueBy = (c) => (c.lastReviewed ? daysBetween(c.lastReviewed, today) - INTERVALS[c.box] : 0);
-  const scheduled = due.filter((c) => c.box >= 2).sort((a, b) => overdueBy(b) - overdueBy(a));
-  const lapsed = shuffle(due.filter((c) => c.box < 2 && c.lastReviewed));
-  /* new material follows the curriculum's own order — the language of business
-     before the theory, the times tables before the algebra */
-  const fresh = due.filter((c) => c.box < 2 && !c.lastReviewed)
-    .sort((a, b) => (a.seq ?? 1e9) - (b.seq ?? 1e9) || String(a.created).localeCompare(String(b.created)));
+  /* Studying a topic on purpose, or asking to go ahead, overrides the pacing —
+     it is a deliberate act, not the nightly dose. */
+  if (studyAhead || filter) {
+    const seen = new Set([...scheduled, ...lapsed, ...fresh].map((c) => c.id));
+    const extra = pool.filter((c) => !c.mastered && !seen.has(c.id) && (!c.passageId || c.intro));
+    fresh = [...fresh, ...extra.sort(byOrder)];
+  }
 
+  let due = [...scheduled, ...lapsed, ...fresh];
   const queue = isText(deck)
-    ? due.sort((a, b) => (a.passageId === b.passageId ? a.order - b.order : String(a.passageId).localeCompare(String(b.passageId))))
-    : [...scheduled, ...lapsed, ...fresh].slice(0, sessionSize(deck));
+    ? pool.filter((c) => isDue(c, today))
+        .sort((a, b) => (a.passageId === b.passageId ? a.order - b.order : String(a.passageId).localeCompare(String(b.passageId))))
+    : due.slice(0, sessionSize(deck));
   session = { queue: isText(deck) ? queue : queue, i: 0, right: 0, wrong: 0, revealed: false, requeued: new Set(), filter, text: isText(deck) };
   $('#sessionDone').hidden = true;
   $('#stage').hidden = session.text;
@@ -1781,8 +1843,10 @@ function renderBrowse() {
   if (filters.cat !== 'all' && !topics.includes(filters.cat)) filters.cat = 'all';
   $('#catFilter').innerHTML = ['all', ...topics]
     .map((c) => `<button class="chip ${c === filters.cat ? 'on' : ''}" data-cat="${esc(c)}">${c === 'all' ? 'All topics' : esc(c)}</button>`).join('');
-  $('#boxFilter').innerHTML = ['all', 1, 2, 3, 4, 5, 'due', 'mastered']
-    .map((b) => `<button class="chip ${String(b) === String(filters.box) ? 'on' : ''}" data-box="${b}">${b === 'all' ? 'All boxes' : b === 'due' ? 'Due today' : b === 'mastered' ? 'Mastered' : 'Box ' + b}</button>`).join('');
+  /* "New" is its own filter now that unstudied cards sit outside the boxes */
+  const LABEL = { all: 'All', new: 'Not started', due: 'Due today', mastered: 'Mastered' };
+  $('#boxFilter').innerHTML = ['all', 'new', 1, 2, 3, 4, 5, 'due', 'mastered']
+    .map((b) => `<button class="chip ${String(b) === String(filters.box) ? 'on' : ''}" data-box="${b}">${LABEL[b] || 'Box ' + b}</button>`).join('');
   renderList();
 }
 
@@ -1790,8 +1854,9 @@ function matches(card) {
   const today = dayKey();
   if (filters.cat !== 'all' && (card.category || '') !== filters.cat) return false;
   if (filters.box === 'mastered' && !card.mastered) return false;
-  if (filters.box === 'due' && !isDue(card, today)) return false;
-  if (!['all', 'due', 'mastered'].includes(filters.box) && (card.mastered || card.box !== Number(filters.box))) return false;
+  if (filters.box === 'due' && !isReview(card, today)) return false;
+  if (filters.box === 'new' && !isNew(card)) return false;
+  if (!['all', 'new', 'due', 'mastered'].includes(filters.box) && !inBox(card, Number(filters.box))) return false;
   if (filters.q && !(card.front + ' ' + card.back).toLowerCase().includes(filters.q)) return false;
   return true;
 }
@@ -1804,7 +1869,7 @@ function renderList() {
   $('#browseEmpty').hidden = list.length > 0;
   $('#browseEmpty').textContent = all.length ? 'No cards match these filters.' : 'No cards in this deck yet.';
   $('#cardList').innerHTML = list.slice(0, 400).map((c, i) => {
-    const due = isDue(c, today);
+    const due = isReview(c, today);
     const when = c.mastered ? 'retired' : isNew(c) ? 'not started' : due ? 'due now' : `next ${humanDate(nextDueKey(c))}`;
     return `<article class="mini" data-id="${c.id}" style="animation-delay:${Math.min(i * 20, 320)}ms">
       <div class="q">${esc(c.front)}</div>
