@@ -432,17 +432,16 @@ function seedRow(h, log, today) {
       <span class="seed-name">${esc(h.name)}${h.gate && need ? '<i class="gate-tag">first</i>' : ''}</span>
       ${deck ? `<span class="seed-floor">${(() => {
           const did = reviewedInDeckToday(deck.id);
-          const unit = isText(deck) ? 'line' : 'card';
-          /* A passage's nightly dose is set in words, so the habit's "1" was
-             never the real number — the deck said 11 lines while the seed
-             promised one. Count what is actually waiting. */
-          const want = isText(deck)
-            ? did + deckCards(deck.id).filter((c) => isDue(c, today)).length
-            : (h.amount || 1);
+          /* A passage's nightly dose is measured in words and a missed line
+             comes straight back, so any line target is a fiction — it drifted
+             from "0 of 5" to "6 of 8" while you worked. Report the work done;
+             the row ticks itself when the night is finished. */
+          if (isText(deck)) return `${did} line${did === 1 ? '' : 's'} today`;
+          const want = h.amount || 1;
           /* "18 of 15" read like a bug. Past the target it is just a total. */
           return did >= want
-            ? `${did} ${unit}${did === 1 ? '' : 's'} today`
-            : `${did} of ${want} ${unit}s today`;
+            ? `${did} card${did === 1 ? '' : 's'} today`
+            : `${did} of ${want} cards today`;
         })()}</span>`
              : (h.floor && !done ? `<span class="seed-floor">floor: ${esc(h.floor)}</span>` : '')}
     </span>
@@ -619,7 +618,7 @@ function renderDeckSuggestions(habits) {
   $('#suggest').hidden = !unlinked.length;
   $('#suggestRow').innerHTML = unlinked.map((d) => `<button class="sugg" data-seed-deck="${d.id}">
       <span class="sugg-plus">+</span>
-      <span><b>${esc(d.name)}</b><em>${isText(d) ? 'a line a day' : `${deckDaily(d)} cards a day`}</em></span>
+      <span><b>${esc(d.name)}</b><em>${isText(d) ? 'a few lines a night' : `${deckDaily(d)} cards a day`}</em></span>
     </button>`).join('');
   $$('#suggestRow [data-seed-deck]').forEach((b) => b.addEventListener('click', () => {
     const deck = state.decks.find((d) => d.id === b.dataset.seedDeck);
