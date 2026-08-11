@@ -431,8 +431,14 @@ function seedRow(h, log, today) {
     <span class="seed-body">
       <span class="seed-name">${esc(h.name)}${h.gate && need ? '<i class="gate-tag">first</i>' : ''}</span>
       ${deck ? `<span class="seed-floor">${(() => {
-          const did = reviewedInDeckToday(deck.id), want = h.amount || 1;
+          const did = reviewedInDeckToday(deck.id);
           const unit = isText(deck) ? 'line' : 'card';
+          /* A passage's nightly dose is set in words, so the habit's "1" was
+             never the real number — the deck said 11 lines while the seed
+             promised one. Count what is actually waiting. */
+          const want = isText(deck)
+            ? did + deckCards(deck.id).filter((c) => isDue(c, today)).length
+            : (h.amount || 1);
           /* "18 of 15" read like a bug. Past the target it is just a total. */
           return did >= want
             ? `${did} ${unit}${did === 1 ? '' : 's'} today`
