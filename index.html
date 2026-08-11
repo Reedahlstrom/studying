@@ -47,6 +47,14 @@
       <p class="eyebrow" id="todayGreeting">Good evening</p>
       <h1 class="today-line" id="todayLine">Today</h1>
       <div class="gate" id="gate" hidden><span class="gate-dot"></span><span id="gateText">—</span></div>
+
+      <!-- the day's reward: it grows with the streak -->
+      <div class="harvest" id="harvest" hidden>
+        <div class="plant" id="plant"></div>
+        <p class="harvest-day" id="harvestDay">Day 1</p>
+        <p class="harvest-line" id="harvestLine">—</p>
+        <p class="harvest-note" id="harvestNote"></p>
+      </div>
     </div>
 
     <div class="grove" id="grove"></div>
@@ -64,14 +72,6 @@
       <p class="eyebrow" id="greeting">Welcome back</p>
       <h1 class="due-count"><span id="dueBig">0</span><small id="dueWord">cards due</small></h1>
       <p class="sub" id="heroSub">across all your decks</p>
-    </div>
-
-    <!-- the day's reward: it grows with the streak -->
-    <div class="harvest" id="harvest" hidden>
-      <div class="plant" id="plant"></div>
-      <p class="harvest-day" id="harvestDay">Day 1</p>
-      <p class="harvest-line" id="harvestLine">—</p>
-      <p class="harvest-note" id="harvestNote"></p>
     </div>
 
     <div class="deck-grid" id="deckGrid"></div>

@@ -430,7 +430,14 @@ function seedRow(h, log, today) {
     <span class="tick"><svg viewBox="0 0 24 24"><path d="M4 12.5l5 5L20 6.5"/></svg></span>
     <span class="seed-body">
       <span class="seed-name">${esc(h.name)}${h.gate && need ? '<i class="gate-tag">first</i>' : ''}</span>
-      ${deck ? `<span class="seed-floor">${reviewedInDeckToday(deck.id)} of ${h.amount || 1} ${isText(deck) ? 'lines' : 'cards'} today</span>`
+      ${deck ? `<span class="seed-floor">${(() => {
+          const did = reviewedInDeckToday(deck.id), want = h.amount || 1;
+          const unit = isText(deck) ? 'line' : 'card';
+          /* "18 of 15" read like a bug. Past the target it is just a total. */
+          return did >= want
+            ? `${did} ${unit}${did === 1 ? '' : 's'} today`
+            : `${did} of ${want} ${unit}s today`;
+        })()}</span>`
              : (h.floor && !done ? `<span class="seed-floor">floor: ${esc(h.floor)}</span>` : '')}
     </span>
     ${deck ? '<span class="seed-go"><svg viewBox="0 0 24 24"><path d="M5 12h13M13 6l6 6-6 6"/></svg></span>' : ''}
@@ -1243,21 +1250,31 @@ function bumpDaily(deckId = state.activeDeck) {
    remain live even while you are looking at the question again. */
 function reveal() {
   if (!session) return;
-  const fc = $('#flashcard');
+  const fc = $('#flashcard'), slot = $('#cardSlot');
+  /* A card on its way out is not yours to tap. Without this, a quick second
+     tap landed on the outgoing card during its 320ms exit. */
+  if (slot.classList.contains('leave-left') || slot.classList.contains('leave-right')) return;
   if (!session.revealed) {
     session.revealed = true;
     fc.classList.add('flipped');
-    $('#answerRow').classList.add('on');
     $('.tap-hint').textContent = 'tap to flip back';
     buzz(8);
   } else {
     fc.classList.toggle('flipped');
     buzz(5);
   }
+  /* Derive the buttons from whether the answer has been seen, never from a
+     class that can drift out of step. A flip-back used to strand the session
+     showing the answer with no way to grade it. */
+  $('#answerRow').classList.toggle('on', session.revealed);
 }
 
 function answer(correct) {
   if (!session || !session.revealed) return;
+  /* Two fast taps on "Got it" used to grade one card twice — the second
+     landed while the first was still animating out. */
+  const slot = $('#cardSlot');
+  if (slot.classList.contains('leave-left') || slot.classList.contains('leave-right')) return;
   const card = session.queue[session.i];
   grade(card, correct);
   correct ? session.right++ : session.wrong++;
@@ -1802,7 +1819,12 @@ function humanDate(key) {
   const diff = daysBetween(dayKey(), key);
   if (diff <= 0) return 'today';
   if (diff === 1) return 'tomorrow';
-  return keyToDate(key).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  /* A goal aimed at next year read as a bare "Jun 1", which looks like weeks
+     away rather than ten months. */
+  const d = keyToDate(key);
+  const opts = { month: 'short', day: 'numeric' };
+  if (d.getFullYear() !== new Date().getFullYear()) opts.year = 'numeric';
+  return d.toLocaleDateString(undefined, opts);
 }
 
 function setupBrowse() {

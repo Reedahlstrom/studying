@@ -299,12 +299,12 @@ kbd { font: 500 11px/1 ui-monospace, monospace; padding: 3px 5px; border-radius:
    Quiet closure. Nothing bounces, nothing pops — it grows. */
 .harvest {
   display: grid; justify-items: center; text-align: center; gap: 3px;
-  padding: 30px 20px 34px; margin: 18px 0 22px;
+  padding: 20px 20px 22px; margin: 16px 0 20px;
   border-radius: var(--r-xl);
   background: linear-gradient(170deg, var(--olive-soft), transparent 78%);
   border: 1px solid color-mix(in srgb, var(--olive) 18%, transparent);
 }
-.plant { width: 104px; height: 130px; margin-bottom: 6px; }
+.plant { width: 72px; height: 88px; margin-bottom: 2px; }
 .plant svg { width: 100%; height: 100%; overflow: visible; }
 .plant .stem {
   fill: none; stroke: var(--olive-deep); stroke-width: 3.4; stroke-linecap: round;
@@ -780,7 +780,8 @@ select { padding-right: 38px; cursor: pointer; }
   .habit-go { width: 38px; height: 38px; }
 
   /* headline and reward breathe better with less chrome */
-  .harvest { padding: 26px 16px 28px; margin: 14px 0 18px; }
+  .harvest { padding: 16px 16px 18px; margin: 12px 0 16px; }
+  .plant { width: 62px; height: 76px; }
   .plant { width: 92px; height: 116px; }
   .stat-row { gap: 8px; }
   .stat { padding: 13px 8px; }
