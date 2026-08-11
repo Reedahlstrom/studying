@@ -1043,3 +1043,25 @@ select { padding-right: 38px; cursor: pointer; }
   display: block; font-size: 11px; letter-spacing: .06em; text-transform: uppercase;
   color: var(--text-faint); margin-bottom: 3px;
 }
+
+/* Deck settings — rename, recolour, delete — without hijacking the card tap */
+.deck-edit {
+  flex: none; display: grid; place-items: center; width: 30px; height: 30px;
+  margin: -4px -6px -4px 2px; border-radius: 9px;
+  color: var(--text-faint); background: transparent;
+  opacity: 0; transition: opacity .2s, background .2s, color .2s;
+}
+.deck-edit svg { width: 17px; height: 17px; fill: currentColor; }
+.deck-edit:hover { background: var(--bg-elev-2); color: var(--text); }
+.deck-card:hover .deck-edit, .deck-edit:focus-visible { opacity: 1; }
+/* on touch there is no hover to reveal it, so it simply stays */
+@media (hover: none) { .deck-edit { opacity: .55; } }
+.deck-card { cursor: pointer; }
+.deck-card:focus-visible { outline: 2px solid var(--olive); outline-offset: 2px; }
+
+/* Deck delete arms on the first tap and says what it will destroy */
+.btn.danger-ghost.armed {
+  background: var(--danger, #b4472f); color: #fff;
+  animation: nudge .3s var(--ease);
+}
+@keyframes nudge { 0%,100% { transform: translateX(0); } 25% { transform: translateX(-3px); } 75% { transform: translateX(3px); } }

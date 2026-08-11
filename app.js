@@ -38,7 +38,7 @@ const daysBetween = (a, b) => Math.round((keyToDate(b) - keyToDate(a)) / 8640000
 /* ───────────────────────── state ───────────────────────── */
 const defaultState = () => ({
   decks: [], cards: [], passages: [], activeDeck: null,
-  habits: [], goals: [], log: {}, planted: [],
+  habits: [], goals: [], log: {}, planted: [], removed: [],
   settings: { target: 15, theme: 'light', requeue: false, apiKey: '' },
   streak: { count: 0, last: null },
   daily: { day: null, count: 0 },
@@ -819,19 +819,34 @@ function renderDecks() {
       : dueTonight
         ? `${dueTonight} ${unit}${dueTonight === 1 ? '' : 's'} to go${mastered ? ` · ${mastered} mastered` : ''}`
         : cards.length ? `nothing due${mastered ? ` · ${mastered} mastered` : ''}` : 'empty';
-    return `<button class="deck-card ${settled ? 'settled' : ''}" data-deck="${d.id}" style="--dc:${d.color};animation-delay:${i * 45}ms">
+    /* a div, not a button, so the settings control can live inside it — a
+       button inside a button is invalid and swallows the inner click */
+    return `<div class="deck-card ${settled ? 'settled' : ''}" data-deck="${d.id}" role="button" tabindex="0"
+        style="--dc:${d.color};animation-delay:${i * 45}ms">
       <div class="deck-top">
         <span class="deck-name">${esc(d.name)}</span>
         ${badge}
+        <button class="deck-edit" data-deck-edit="${d.id}" aria-label="${esc(d.name)} settings">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg>
+        </button>
       </div>
       <div class="deck-meta">${isCurriculum(d) ? '<span class="deck-tag">curriculum</span> · ' : ''}${meta}</div>
       <div class="deck-bar"><i style="width:${pct}%;background:linear-gradient(90deg,${d.color},${d.color}bb)"></i></div>
-    </button>`;
+    </div>`;
   }).join('') + `<button class="new-deck" id="newDeckBtn" style="animation-delay:${state.decks.length * 45}ms">
       <span class="plus"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></span>
       <span><strong>New deck</strong><em>A class, a language, anything</em></span>
     </button>`;
-  $$('#deckGrid [data-deck]').forEach((b) => b.addEventListener('click', () => openDeck(b.dataset.deck)));
+  $$('#deckGrid [data-deck]').forEach((b) => {
+    b.addEventListener('click', (e) => { if (e.target.closest('[data-deck-edit]')) return; openDeck(b.dataset.deck); });
+    /* it stopped being a real button, so give the keyboard its behaviour back */
+    b.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openDeck(b.dataset.deck); }
+    });
+  });
+  $$('#deckGrid [data-deck-edit]').forEach((b) => b.addEventListener('click', (e) => {
+    e.stopPropagation(); openDeckSheet(b.dataset.deckEdit);
+  }));
   $('#newDeckBtn').addEventListener('click', () => openDeckSheet(null));
 }
 
@@ -2040,10 +2055,24 @@ function setupModals() {
   $('#dDelete').addEventListener('click', () => {
     const d = state.decks.find((x) => x.id === editingDeck); if (!d) return;
     const n = deckCards(d.id).length;
-    if (!confirm(`Delete "${d.name}" and its ${n} card${n === 1 ? '' : 's'}? This cannot be undone.`)) return;
+    const btn = $('#dDelete');
+    /* Two taps, in the sheet. A browser confirm() is easy to dismiss by
+       reflex on a phone and cannot say what is about to be lost. */
+    if (btn.dataset.armed !== d.id) {
+      btn.dataset.armed = d.id;
+      btn.textContent = `Delete ${n} card${n === 1 ? '' : 's'} for good`;
+      btn.classList.add('armed');
+      setTimeout(() => { if (btn.dataset.armed === d.id) resetDeleteBtn(); }, 5000);
+      return;
+    }
+    resetDeleteBtn();
     state.cards = state.cards.filter((c) => c.deckId !== d.id);
     state.passages = (state.passages || []).filter((x) => x.deckId !== d.id);
     state.decks = state.decks.filter((x) => x.id !== d.id);
+    /* A built-in deck would otherwise be recreated on the next load, so
+       deleting it would look broken. Remember the decision. */
+    state.removed = [...new Set([...(state.removed || []), d.id])];
+    state.habits = (state.habits || []).filter((h) => h.deckId !== d.id);
     if (state.activeDeck === d.id) state.activeDeck = state.decks[0]?.id || null;
     save(); $('#deckScrim').hidden = true; go('decks');
     toast('Deck deleted.');
@@ -2175,12 +2204,19 @@ function setupPlanner() {
 }
 
 let editingDeck = null;
+function resetDeleteBtn() {
+  const btn = $('#dDelete');
+  delete btn.dataset.armed;
+  btn.textContent = 'Delete deck';
+  btn.classList.remove('armed');
+}
 function openDeckSheet(deckId = null) {
+  resetDeleteBtn();
   editingDeck = deckId;
   const d = deckId ? state.decks.find((x) => x.id === deckId) : null;
   $('#deckModalTitle').textContent = d ? 'Edit deck' : 'New deck';
   $('#dName').value = d ? d.name : '';
-  $('#dDelete').hidden = !d || isCurriculum(d);
+  $('#dDelete').hidden = !d;
   $('#dKindField').hidden = !!d;                      // kind is fixed once cards exist
   $$('#dKindSeg .seg-btn').forEach((b) => b.classList.toggle('on', b.dataset.kind === 'plain'));
   requestAnimationFrame(() => moveThumb($('#dKindSeg'), $('#dKindThumb')));
@@ -2288,29 +2324,30 @@ function seed() {
     deck = { id: CURRICULUM_DECK, name: 'Business & Economics', color: DECK_COLORS[0], kind: 'curriculum', created: new Date().toISOString() };
     state.decks.unshift(deck);
   }
+  const removed = new Set(state.removed || []);
   let math = state.decks.find((d) => d.id === MATH_DECK);
-  if (!math) {
+  if (!math && !removed.has(MATH_DECK)) {
     math = { id: MATH_DECK, name: 'Mental Math', color: DECK_COLORS[4], kind: 'plain', created: new Date().toISOString() };
     state.decks.push(math);
   }
   /* Built for ten a night — arithmetic sticks by repetition, not volume. */
-  if (!math.daily) math.daily = 10;
+  if (math && !math.daily) math.daily = 10;
 
   let world = state.decks.find((d) => d.id === WORLD_DECK);
-  if (!world) {
+  if (!world && !removed.has(WORLD_DECK)) {
     world = { id: WORLD_DECK, name: 'Countries of the World', color: DECK_COLORS[2], kind: 'plain', created: new Date().toISOString() };
     state.decks.push(world);
   }
-  if (!world.daily) world.daily = 20;
+  if (world && !world.daily) world.daily = 20;
   let leaders = state.decks.find((d) => d.id === LEADERS_DECK);
-  if (!leaders) {
+  if (!leaders && !removed.has(LEADERS_DECK)) {
     leaders = { id: LEADERS_DECK, name: `Who Leads Them (${LEADER_STAMP})`, color: DECK_COLORS[3], kind: 'plain', created: new Date().toISOString() };
     state.decks.push(leaders);
   }
-  if (!leaders.daily) leaders.daily = 10;
+  if (leaders && !leaders.daily) leaders.daily = 10;
   /* The only deck here that rots. Keep the date on the name so a stale answer
      is obviously stale rather than quietly wrong. */
-  leaders.name = `Who Leads Them (${LEADER_STAMP})`;
+  if (leaders) leaders.name = `Who Leads Them (${LEADER_STAMP})`;
 
   if (state.seedVersion < SEED_VERSION) {
     const mathHave = existingFronts(MATH_DECK);
@@ -2322,6 +2359,7 @@ function seed() {
     });
 
     for (const [deckId, list] of [[WORLD_DECK, COUNTRY_CARDS], [LEADERS_DECK, LEADER_CARDS]]) {
+      if (removed.has(deckId)) continue;
       const seen = existingFronts(deckId);
       [...list].reverse().forEach((c, revIdx) => {
         const key = c.front.trim().toLowerCase();
@@ -2379,7 +2417,7 @@ function seed() {
   state.planted = state.planted || [];
   /* The world decks are offered on the Goals page rather than planted for you —
      they would otherwise add thirty cards a night to the gate uninvited. */
-  [math, deck].forEach((d) => {
+  [math, deck].filter(Boolean).forEach((d) => {
     if (!d || state.planted.includes(d.id)) return;
     state.planted.push(d.id);
     if (state.habits.some((h) => h.deckId === d.id)) return;
