@@ -23,7 +23,7 @@ const CURRICULUM_DECK = 'deck-business';
 const MATH_DECK = 'deck-math';
 const WORLD_DECK = 'deck-world';
 const LEADERS_DECK = 'deck-leaders';
-const SEED_VERSION = 6;   // bump whenever curriculum.js gains cards, or installs never see them
+const SEED_VERSION = 7;   // bump whenever curriculum.js gains cards, or installs never see them
 
 const DECK_COLORS = ['#6d8340', '#3f7d78', '#8a5a9e', '#b06a35', '#3f6ba8', '#a8496a', '#7a7f45', '#4a7f4f'];
 
@@ -137,6 +137,9 @@ function normalizeCard(c) {
     right: Number(c.right) || 0,
     source: c.source || 'manual',
     seq: Number.isFinite(c.seq) ? c.seq : null,   // position in a designed curriculum
+    /* cards about the same thing (one country, one principle) share a group,
+       so they can be kept near each other without sitting back to back */
+    group: c.group || null,
     /* passage chunks only — null on ordinary cards */
     passageId: c.passageId || null,
     order: c.passageId ? Number(c.order) || 0 : null,
@@ -173,6 +176,33 @@ const inBox = (card, b) => !card.mastered && !!card.lastReviewed && card.box ===
 const box1Load = (cards) => cards.filter((c) => inBox(c, 1)).length;
 const byOrder = (a, b) => (a.seq ?? 1e9) - (b.seq ?? 1e9) || String(a.created).localeCompare(String(b.created));
 
+/* Some decks are a designed sequence — the language of business before the
+   theory, addition before the times tables. A list of countries is not: its
+   alphabetical order carries no meaning and makes every night guessable. */
+const isOrdered = (deck) => isCurriculum(deck) || deck.id === MATH_DECK;
+
+/* Cards about the same thing arrive together — capital, flag, where, leader.
+   Served in that order you answer the second and third from the first, which
+   teaches nothing. Keep a group inside one window, but scatter it within. */
+function intake(cards, deck, window = 24) {
+  const groups = new Map();
+  for (const c of cards) {
+    const k = c.group || c.id;                 // ungrouped cards stand alone
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(c);
+  }
+  let order = [...groups.values()];
+  order = isOrdered(deck)
+    ? order.sort((a, b) => byOrder(a[0], b[0]))   // designed decks keep their sequence
+    : shuffle(order);                             // a country list has no sequence
+  const flat = order.flat();
+  /* shuffle inside a sliding window: near where it belongs, never in a
+     predictable order, and a group's own cards no longer sit back to back */
+  const out = [];
+  for (let i = 0; i < flat.length; i += window) out.push(...shuffle(flat.slice(i, i + window)));
+  return out;
+}
+
 /* What tonight actually consists of for a deck: the reviews you owe, plus as
    many new cards as Box 1 can take. Everything that displays a number goes
    through here, so the deck page, the Goals seed and the session itself can
@@ -182,8 +212,10 @@ function tonight(deck, today = dayKey(), pool = null) {
   const from = pool || all;
   const reviews = from.filter((c) => isReview(c, today));
   const room = Math.max(0, BOX1_LIMIT - box1Load(all));
-  const fresh = from.filter(isNew).sort(byOrder).slice(0, room);
-  return { reviews, fresh, room, waiting: from.filter(isNew).length };
+  const unseen = from.filter(isNew);
+  /* Only the count is needed by the displays that call this on every save;
+     the order is settled once, when a session actually starts. */
+  return { reviews, unseen, room, fresh: unseen.slice(0, room), waiting: unseen.length };
 }
 
 function isDue(card, today = dayKey()) {
@@ -1134,7 +1166,9 @@ function startSession(filter = null, studyAhead = false) {
   /* Reviews are owed; new cards are a choice. Box 2+ cards scheduled for
      tonight come first, then Box 1 (the every-day box), and only then does
      new material fill what is left — and only while Box 1 has room. */
-  let { reviews, fresh } = tonight(deck, today, pool);
+  const plan = tonight(deck, today, pool);
+  const reviews = plan.reviews;
+  let fresh = intake(plan.unseen, deck).slice(0, plan.room);
   const overdueBy = (c) => daysBetween(c.lastReviewed, today) - INTERVALS[c.box];
   const scheduled = reviews.filter((c) => c.box >= 2).sort((a, b) => overdueBy(b) - overdueBy(a));
   const lapsed = shuffle(reviews.filter((c) => c.box === 1));
@@ -1144,7 +1178,7 @@ function startSession(filter = null, studyAhead = false) {
   if (studyAhead || filter) {
     const seen = new Set([...scheduled, ...lapsed, ...fresh].map((c) => c.id));
     const extra = pool.filter((c) => !c.mastered && !seen.has(c.id) && (!c.passageId || c.intro));
-    fresh = [...fresh, ...extra.sort(byOrder)];
+    fresh = [...fresh, ...intake(extra, deck)];
   }
 
   let due = [...scheduled, ...lapsed, ...fresh];
@@ -1183,7 +1217,7 @@ function showCard() {
   $('#cardCat').hidden = !label;
   $('#cardBox').hidden = false;
   $('#cardBox').textContent = `Box ${card.box}`;
-  $('.tap-hint').textContent = 'tap to reveal';
+  $('.tap-hint').textContent = hasKeyboard() ? 'tap or press space' : 'tap to reveal';
   const total = session.queue.length;
   $('#progressText').textContent = `${session.i + 1} / ${total}`;
   $('#progressFill').style.width = `${(session.i / total) * 100}%`;
@@ -1234,13 +1268,23 @@ function showChunk() {
       '<button class="btn ghost" data-mem="peek">Show me</button>' +
       '<button class="btn primary" data-mem="recalled">I said it right</button>';
   } else {
-    text.hidden = true; text.classList.remove('cue');
+    /* The typing stage used to show nothing at all, so a line coming back for
+       review gave you no way to know which line was wanted — it read as the
+       app skipping past lines. A passage is a chain: the cue for a line is
+       the line before it. */
+    const all = passage ? chunksOf(passage.id) : [];
+    const idx = all.findIndex((x) => x.id === card.id);
+    const prev = idx > 0 ? all[idx - 1] : null;
+    text.hidden = false; text.classList.remove('cue'); text.classList.add('lead-in');
+    text.textContent = prev ? `…${prev.front}` : 'Start from the beginning.';
     input.hidden = false;
+    input.placeholder = prev ? 'Type the line that comes next…' : 'Type the opening line…';
     $('#memActions').innerHTML =
       '<button class="btn ghost" data-mem="hint">Hint</button>' +
       '<button class="btn primary" data-mem="check">Check</button>';
     setTimeout(() => input.focus(), 80);
   }
+  if (stage < 2) { text.classList.remove('lead-in'); }
   /* You were learning line 7 having never seen the piece whole. The context
      is collapsed by default so it can't be used as a crutch. */
   const ctx = $('#memContext'), ctxBtn = $('#memContextBtn');
@@ -1281,9 +1325,13 @@ function memAction(what) {
       advanceChunk(card, true); session.right++;
       setTimeout(nextChunk, 900);
     } else {
-      toast(`${result.wrong} word${result.wrong === 1 ? '' : 's'} off — the misses are marked.`, 'bad'); buzz(24);
+      toast(`${result.wrong} word${result.wrong === 1 ? '' : 's'} off.`, 'bad'); buzz(24);
+      /* Show the line itself. The marked-up diff alone left you guessing at
+         what you were meant to have written. */
+      $('#memDiff').insertAdjacentHTML('beforeend',
+        `<p class="mem-truth"><span>the line was</span>${esc(card.front)}</p>`);
       advanceChunk(card, false); session.wrong++;
-      $('#memActions').innerHTML = '<button class="btn primary" data-mem="continue">Try it again later</button>';
+      $('#memActions').innerHTML = '<button class="btn primary" data-mem="continue">Got it — keep going</button>';
     }
     return;
   }
@@ -1325,6 +1373,9 @@ function bumpDaily(deckId = state.activeDeck) {
 /* First tap reveals; every tap after that flips between question and answer.
    `revealed` stays true once set — you have seen it, so the grading buttons
    remain live even while you are looking at the question again. */
+/* Only mention keys on something that has them. */
+const hasKeyboard = () => matchMedia('(hover: hover) and (pointer: fine)').matches;
+
 function reveal() {
   if (!session) return;
   const fc = $('#flashcard'), slot = $('#cardSlot');
@@ -1334,7 +1385,7 @@ function reveal() {
   if (!session.revealed) {
     session.revealed = true;
     fc.classList.add('flipped');
-    $('.tap-hint').textContent = 'tap to flip back';
+    $('.tap-hint').textContent = hasKeyboard() ? 'space to flip back' : 'tap to flip back';
     buzz(8);
   } else {
     fc.classList.toggle('flipped');
@@ -2278,6 +2329,14 @@ function seed() {
         addCard({ ...c, deckId, source: 'seed', seq: list.length - 1 - revIdx });
         seen.add(key);
       });
+      /* Cards seeded before groups existed have none, so they would each be
+         scattered alone. Backfill from the current set. */
+      const byFrontKey = new Map(list.map((c) => [c.front.trim().toLowerCase(), c]));
+      deckCards(deckId).forEach((c) => {
+        if (c.group) return;
+        const match = byFrontKey.get(c.front.trim().toLowerCase());
+        if (match && match.group) c.group = match.group;
+      });
     }
 
     const have = existingFronts(CURRICULUM_DECK);
@@ -2417,12 +2476,17 @@ function boot() {
     if (['#scrim', '#deckScrim', '#nodeScrim', '#reviewScrim'].some((s) => !$(s).hidden)) return;
     const tag = document.activeElement.tagName;
     if (tag === 'TEXTAREA' || tag === 'INPUT' || tag === 'SELECT') return;
-    if (!session.revealed && (e.key === ' ' || e.key === 'Enter')) { e.preventDefault(); reveal(); }
-    else if (session.revealed) {
-      if (e.key === 'f' || e.key === 'F') { e.preventDefault(); reveal(); }        // flip back and forth
-      if (e.key === '1' || e.key === 'ArrowLeft') { e.preventDefault(); answer(false); }
-      if (e.key === '2' || e.key === 'ArrowRight' || e.key === ' ' || e.key === 'Enter') { e.preventDefault(); answer(true); }
-    }
+    /* The card's own handler fires first when it has focus; without this the
+       same keypress revealed the card and then immediately graded it. */
+    if (e.defaultPrevented || e.repeat || e.metaKey || e.ctrlKey || e.altKey) return;
+
+    const k = e.key.toLowerCase();
+    /* space flips, both ways — it never grades, so a stray press cannot mark
+       a card you have not read */
+    if (k === ' ' || k === 'enter') { e.preventDefault(); reveal(); return; }
+    if (!session.revealed) return;
+    if (k === 'd' || k === '1' || k === 'arrowleft') { e.preventDefault(); answer(false); }
+    if (k === 'f' || k === '2' || k === 'arrowright') { e.preventDefault(); answer(true); }
   });
 
   const onScroll = () => $('.topbar').classList.toggle('scrolled', window.scrollY > 6);

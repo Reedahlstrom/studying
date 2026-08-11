@@ -1020,3 +1020,26 @@ select { padding-right: 38px; cursor: pointer; }
   display: block; font-size: clamp(64px, 18vw, 104px); line-height: 1.1;
   margin-bottom: 12px; filter: drop-shadow(0 3px 8px rgb(0 0 0 / .16));
 }
+
+/* Keyboard hints on the grading buttons — shown only where a keyboard exists */
+.key-hint {
+  display: none; margin-left: 8px; padding: 1px 6px; border-radius: 5px;
+  font: 600 11px/1.5 ui-monospace, SFMono-Regular, monospace;
+  background: rgb(255 255 255 / .22); border: 1px solid rgb(255 255 255 / .28);
+}
+.btn.miss .key-hint { background: rgb(0 0 0 / .06); border-color: rgb(0 0 0 / .1); }
+@media (hover: hover) and (pointer: fine) { .key-hint { display: inline-block; } }
+
+/* Memorize: the line before, as the cue for the line you owe */
+.mem-text.lead-in {
+  color: var(--text-faint); font-size: 15px; font-style: italic;
+  text-wrap: pretty; margin-bottom: 4px;
+}
+.mem-truth {
+  margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line-soft);
+  font-size: 15px; line-height: 1.6; color: var(--text); text-wrap: pretty;
+}
+.mem-truth span {
+  display: block; font-size: 11px; letter-spacing: .06em; text-transform: uppercase;
+  color: var(--text-faint); margin-bottom: 3px;
+}
