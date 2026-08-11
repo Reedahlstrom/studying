@@ -1014,3 +1014,9 @@ select { padding-right: 38px; cursor: pointer; }
 }
 .box-row.pool { opacity: .72; }
 .box-row.pool .bar { background: transparent; border: 1px dashed var(--line); }
+
+/* Flag cards: the flag is the question, not a decoration beside it. */
+.big-flag {
+  display: block; font-size: clamp(64px, 18vw, 104px); line-height: 1.1;
+  margin-bottom: 12px; filter: drop-shadow(0 3px 8px rgb(0 0 0 / .16));
+}

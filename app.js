@@ -4,6 +4,7 @@
    ══════════════════════════════════════════════════════════════ */
 import { PHASES, PRINCIPLES, CURRICULUM_CARDS } from './curriculum.js';
 import { MATH_CARDS } from './math.js';
+import { COUNTRY_CARDS, LEADER_CARDS, LEADER_STAMP } from './countries.js';
 import { AMBITION, chunkText, firstLetters, gradeTyping, estimateAll, wordsIn } from './passages.js';
 import * as PLAN from './planner.js';
 import { CADENCE, perWeekOf, requiredToday, availableToday, gateBlockers, gateOpen, didOn, stats as habitStats, goalProgress } from './planner.js';
@@ -20,7 +21,9 @@ const INTERVALS = { 1: 0, 2: 2, 3: 4, 4: 8, 5: 16 };
 const BOX1_LIMIT = 30;
 const CURRICULUM_DECK = 'deck-business';
 const MATH_DECK = 'deck-math';
-const SEED_VERSION = 5;   // bump whenever curriculum.js gains cards, or installs never see them
+const WORLD_DECK = 'deck-world';
+const LEADERS_DECK = 'deck-leaders';
+const SEED_VERSION = 6;   // bump whenever curriculum.js gains cards, or installs never see them
 
 const DECK_COLORS = ['#6d8340', '#3f7d78', '#8a5a9e', '#b06a35', '#3f6ba8', '#a8496a', '#7a7f45', '#4a7f4f'];
 
@@ -1166,7 +1169,14 @@ function showCard() {
   fc.classList.remove('flipped');
   slot.classList.remove('leave-left', 'leave-right', 'enter');
   $('#answerRow').classList.remove('on');
-  $('#cardFront').textContent = card.front;
+  /* A flag card is about the flag, so show it at a size you can actually
+     read. The pair of regional-indicator letters is the whole picture. */
+  const flagMatch = card.front.match(/^(\p{RI}\p{RI})\s+(.*)$/u);
+  if (flagMatch) {
+    $('#cardFront').innerHTML = `<span class="big-flag">${esc(flagMatch[1])}</span>${esc(flagMatch[2])}`;
+  } else {
+    $('#cardFront').textContent = card.front;
+  }
   $('#cardBack').textContent = card.back;
   const label = card.category || (activeDeck() || {}).name || '';
   $('#cardCat').textContent = label;
@@ -2235,6 +2245,22 @@ function seed() {
   /* Built for ten a night — arithmetic sticks by repetition, not volume. */
   if (!math.daily) math.daily = 10;
 
+  let world = state.decks.find((d) => d.id === WORLD_DECK);
+  if (!world) {
+    world = { id: WORLD_DECK, name: 'Countries of the World', color: DECK_COLORS[2], kind: 'plain', created: new Date().toISOString() };
+    state.decks.push(world);
+  }
+  if (!world.daily) world.daily = 20;
+  let leaders = state.decks.find((d) => d.id === LEADERS_DECK);
+  if (!leaders) {
+    leaders = { id: LEADERS_DECK, name: `Who Leads Them (${LEADER_STAMP})`, color: DECK_COLORS[3], kind: 'plain', created: new Date().toISOString() };
+    state.decks.push(leaders);
+  }
+  if (!leaders.daily) leaders.daily = 10;
+  /* The only deck here that rots. Keep the date on the name so a stale answer
+     is obviously stale rather than quietly wrong. */
+  leaders.name = `Who Leads Them (${LEADER_STAMP})`;
+
   if (state.seedVersion < SEED_VERSION) {
     const mathHave = existingFronts(MATH_DECK);
     [...MATH_CARDS].reverse().forEach((c, revIdx) => {
@@ -2243,6 +2269,16 @@ function seed() {
       addCard({ ...c, deckId: MATH_DECK, source: 'seed', seq: MATH_CARDS.length - 1 - revIdx });
       mathHave.add(key);
     });
+
+    for (const [deckId, list] of [[WORLD_DECK, COUNTRY_CARDS], [LEADERS_DECK, LEADER_CARDS]]) {
+      const seen = existingFronts(deckId);
+      [...list].reverse().forEach((c, revIdx) => {
+        const key = c.front.trim().toLowerCase();
+        if (seen.has(key)) return;
+        addCard({ ...c, deckId, source: 'seed', seq: list.length - 1 - revIdx });
+        seen.add(key);
+      });
+    }
 
     const have = existingFronts(CURRICULUM_DECK);
     let added = 0;
@@ -2282,6 +2318,8 @@ function seed() {
      deliberately deleted, and never touch a habit you have already tuned. */
   state.habits = state.habits || [];
   state.planted = state.planted || [];
+  /* The world decks are offered on the Goals page rather than planted for you —
+     they would otherwise add thirty cards a night to the gate uninvited. */
   [math, deck].forEach((d) => {
     if (!d || state.planted.includes(d.id)) return;
     state.planted.push(d.id);
