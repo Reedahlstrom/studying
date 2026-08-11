@@ -136,16 +136,27 @@ function normalizeCard(c) {
 }
 
 let saveTimer = null;
+function writeNow() {
+  clearTimeout(saveTimer);
+  try { localStorage.setItem(STORE_KEY, JSON.stringify(state)); publishStatus(); }
+  catch (e) { toast('Could not save — storage is full.', 'bad'); }
+}
 function save() {
   clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => {
-    try { localStorage.setItem(STORE_KEY, JSON.stringify(state)); publishStatus(); }
-    catch (e) { toast('Could not save — storage is full.', 'bad'); }
-  }, 60);
+  saveTimer = setTimeout(writeNow, 60);
 }
+/* Writes are debounced, so backgrounding the app in that window used to drop
+   the last thing you did — on a phone that is one tick, then a swipe away. */
+function flushSave() { if (saveTimer) writeNow(); }
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8));
 
 /* ───────────────────── leitner scheduling ───────────────────── */
+/* A card you have never met is not overdue — it is simply next. Counting the
+   whole untouched deck as "due" turned a fresh 572-card curriculum into a
+   572-card debt on day one. */
+const isNew = (card) => !card.lastReviewed && !card.mastered;
+const isReview = (card, today = dayKey()) => isDue(card, today) && !isNew(card);
+
 function isDue(card, today = dayKey()) {
   if (card.mastered) return false;
   if (card.passageId && !card.intro) return false;   // not introduced yet — waits its turn
@@ -174,6 +185,14 @@ function grade(card, correct) {
 /* ───────────────────────── helpers ───────────────────────── */
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+/* Bind without letting one missing element take every listener after it down
+   with it — that is how the entire seed and goal editor went dead once. */
+function on(sel, ev, fn) {
+  const el = $(sel);
+  if (!el) { console.warn(`[bind] ${sel} is missing — ${ev} not wired`); return null; }
+  el.addEventListener(ev, fn);
+  return el;
+}
 const esc = (s) => String(s).replace(/[&<>"']/g, (m) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
 const deckCards = (id = state.activeDeck) => state.cards.filter((c) => c.deckId === id);
 const activeDeck = () => state.decks.find((d) => d.id === state.activeDeck) || null;
@@ -442,6 +461,7 @@ function treeTended(g, t) {
    shape of the grove hasn't changed, patch the parts that actually moved and
    leave the DOM — and its animations — alone. */
 let groveSig = null;
+let bootDay = dayKey();
 function groveSignature(goals, habits) {
   return goals.map((g) => g.id + '>' + habits.filter((h) => h.goalId === g.id).map((h) => h.id).join(',')).join('|')
     + '#' + habits.filter((h) => !h.goalId).map((h) => h.id).join(',');
@@ -464,6 +484,10 @@ function patchGrove(goals, habits, log, today) {
       const svg = holder.firstElementChild;
       if (svg) svg.style.setProperty('--health', t.health);
     }
+    const name = card.querySelector('.tree-name');
+    if (name && name.textContent !== g.name) name.textContent = g.name;
+    const why = card.querySelector('.tree-why');
+    if (why && why.textContent !== (g.why || '')) why.textContent = g.why || '';
     const tended = card.querySelector('.tree-tended');
     if (tended) { tended.textContent = treeTended(g, t); tended.classList.toggle('warn', t.idle >= 2); }
     const strip = card.querySelector('.strip');
@@ -854,10 +878,12 @@ function renderDeck() {
   const max = Math.max(1, ...[1, 2, 3, 4, 5].map((b) => cards.filter((c) => !c.mastered && c.box === b).length), mastered.length);
   const rows = [1, 2, 3, 4, 5].map((b) => {
     const inBox = cards.filter((c) => !c.mastered && c.box === b);
-    const dueN = inBox.filter((c) => isDue(c, today)).length;
+    const dueN = inBox.filter((c) => isReview(c, today)).length;
+    const newN = inBox.filter(isNew).length;
+    const tail = dueN ? ` · ${dueN} to review` : newN === inBox.length && newN ? ' · not started' : '';
     return `<div class="box-row"><b>Box ${b}</b>
       <div class="bar"><i style="width:${(inBox.length / max) * 100}%"></i></div>
-      <span class="n ${dueN ? 'due' : ''}">${inBox.length}${dueN ? ` · ${dueN} due` : ''}</span></div>`;
+      <span class="n ${dueN ? 'due' : ''}">${inBox.length}${tail}</span></div>`;
   });
   rows.push(`<div class="box-row done"><b>Mastered</b>
       <div class="bar"><i style="width:${(mastered.length / max) * 100}%"></i></div>
@@ -872,10 +898,12 @@ function renderDeck() {
   });
   $('#topicHead').textContent = isCurriculum(deck) ? 'By phase' : 'By topic';
   $('#catList').innerHTML = groups.size
-    ? [...groups.entries()].sort((a, b) => b[1].length - a[1].length).map(([name, list]) => `<div class="cat-row">
+    ? [...groups.entries()].sort((a, b) => (isCurriculum(deck)
+        ? Math.min(...a[1].map((c) => c.seq ?? 1e9)) - Math.min(...b[1].map((c) => c.seq ?? 1e9))
+        : b[1].length - a[1].length)).map(([name, list]) => `<div class="cat-row">
         <span class="dot" style="background:${deck.color}"></span>
         <span class="name">${esc(name)}</span>
-        <span class="meta">${list.length} · ${list.filter((c) => isDue(c, today)).length} due · ${list.filter((c) => c.mastered).length} mastered</span>
+        <span class="meta">${list.length} cards · ${list.filter((c) => c.mastered).length} mastered${list.filter((c) => isReview(c, today)).length ? ` · ${list.filter((c) => isReview(c, today)).length} to review` : ''}</span>
       </div>`).join('')
     : '<p class="hint">Topics appear here once cards are tagged.</p>';
 }
@@ -916,7 +944,7 @@ function renderPath() {
     $('#pathProgress').textContent = cards.length ? Math.round((mastered / cards.length) * 100) + '%' : '0%';
     $('#tree').innerHTML = groups.size ? [...groups.entries()].map(([name, list], i) => {
       const m = list.filter((c) => c.mastered).length;
-      const due = list.filter((c) => isDue(c, today)).length;
+      const due = list.filter((c) => isReview(c, today)).length;
       const pct = Math.round((m / list.length) * 100);
       return `<button class="node ${pct === 100 ? 'done' : m ? 'solid' : list.some((c) => c.seen) ? 'started' : ''}" data-topic="${esc(name)}" style="animation-delay:${i * 40}ms">
         <span class="bead">${pct === 100 ? '<svg viewBox="0 0 24 24"><path d="M4 12.5l5 5L20 6.5"/></svg>' : pct + '%'}</span>
@@ -974,7 +1002,8 @@ function openNode(id) {
   const phase = PHASES.find((p) => p.id === n.phase);
   const own = deckCards().filter((c) => c.principle === id);
   const m = own.filter((c) => c.mastered).length;
-  const due = own.filter((c) => isDue(c)).length;
+  const due = own.filter((c) => isReview(c)).length;
+  const fresh = own.filter(isNew).length;
   const pct = own.length ? Math.round((m / own.length) * 100) : 0;
   $('#nodePhase').textContent = phase.name;
   $('#nodeTitle').textContent = n.title;
@@ -986,7 +1015,11 @@ function openNode(id) {
     ...feeds.map((f) => `<span class="b">leads to ${esc(f)}</span>`),
   ].join('') || '<span class="b">starting point</span>';
   $('#nodeBar').style.width = pct + '%';
-  $('#nodeStats').textContent = `${own.length} cards · ${m} mastered · ${due} due today`;
+  $('#nodeStats').textContent = [
+    `${own.length} cards`,
+    `${m} mastered`,
+    due ? `${due} to review` : fresh === own.length ? 'not started yet' : null,
+  ].filter(Boolean).join(' · ');
   $('#nodeStudy').disabled = own.length === 0;
   $('#nodeScrim').hidden = false;
 }
@@ -1750,14 +1783,14 @@ function renderList() {
   $('#browseEmpty').textContent = all.length ? 'No cards match these filters.' : 'No cards in this deck yet.';
   $('#cardList').innerHTML = list.slice(0, 400).map((c, i) => {
     const due = isDue(c, today);
-    const when = c.mastered ? 'retired' : due ? 'due now' : `next ${humanDate(nextDueKey(c))}`;
+    const when = c.mastered ? 'retired' : isNew(c) ? 'not started' : due ? 'due now' : `next ${humanDate(nextDueKey(c))}`;
     return `<article class="mini" data-id="${c.id}" style="animation-delay:${Math.min(i * 20, 320)}ms">
       <div class="q">${esc(c.front)}</div>
       <div class="a">${esc(c.back)}</div>
       <div class="tags">
         ${c.category ? `<span class="tag">${esc(c.category)}</span>` : ''}
         <span class="tag ${c.mastered ? 'mastered' : 'box'}">${c.mastered ? 'Mastered' : 'Box ' + c.box}</span>
-        <span class="tag ${due && !c.mastered ? 'due' : ''}">${when}</span>
+        <span class="tag ${due && !c.mastered && !isNew(c) ? 'due' : ''}">${when}</span>
         ${c.seen ? `<span class="tag">${c.right}/${c.seen}</span>` : ''}
       </div></article>`;
   }).join('');
@@ -1921,12 +1954,14 @@ function openGoalSheet(id = null) {
 const closeGoalSheet = () => { $('#goalScrim').hidden = true; editingGoal = null; };
 
 function setupPlanner() {
-  $('#newHabitBtn').addEventListener('click', () => openHabitSheet(null));
-  /* #newGoalBtn is drawn by the garden each render, so it binds there */
-  $('#hCancel').addEventListener('click', closeHabitSheet);
-  $('#gCancel').addEventListener('click', closeGoalSheet);
-  $('#habitScrim').addEventListener('click', (e) => { if (e.target === $('#habitScrim')) closeHabitSheet(); });
-  $('#goalScrim').addEventListener('click', (e) => { if (e.target === $('#goalScrim')) closeGoalSheet(); });
+  /* #newHabitBtn and #newGoalBtn are drawn by the grove, so they do not exist
+     yet at boot. Binding them here threw, and because every listener in this
+     function sat behind that one line, the whole seed and goal editor was
+     never wired: no save, no delete, not even cancel. They bind per render. */
+  on('#hCancel', 'click', closeHabitSheet);
+  on('#gCancel', 'click', closeGoalSheet);
+  on('#habitScrim', 'click', (e) => { if (e.target === $('#habitScrim')) closeHabitSheet(); });
+  on('#goalScrim', 'click', (e) => { if (e.target === $('#goalScrim')) closeGoalSheet(); });
   $('#hGate').addEventListener('click', () => {
     const on = $('#hGate').getAttribute('aria-checked') !== 'true';
     $('#hGate').setAttribute('aria-checked', String(on));
@@ -1952,6 +1987,8 @@ function setupPlanner() {
     state.habits = state.habits || [];
     if (editingHabit) Object.assign(habitById(editingHabit), fields);
     else state.habits.push({ id: 'h-' + uid().slice(0, 8), created: new Date().toISOString(), ...fields });
+    /* an edit can change anything on the card, so rebuild rather than patch */
+    groveSig = null;
     save(); closeHabitSheet(); renderToday();
     toast(editingHabit ? 'Seed updated.' : 'Seed planted.', 'good');
   });
@@ -1959,6 +1996,7 @@ function setupPlanner() {
     if (!confirm('Delete this seed? Its history goes too.')) return;
     state.habits = (state.habits || []).filter((h) => h.id !== editingHabit);
     if (state.log) delete state.log[editingHabit];
+    groveSig = null;
     save(); closeHabitSheet(); renderToday(); toast('Seed removed.');
   });
 
@@ -1969,6 +2007,7 @@ function setupPlanner() {
     state.goals = state.goals || [];
     if (editingGoal) Object.assign(state.goals.find((g) => g.id === editingGoal), fields);
     else state.goals.push({ id: 'g-' + uid().slice(0, 8), created: new Date().toISOString(), ...fields });
+    groveSig = null;
     save(); closeGoalSheet();
     renderToday();
     toast(editingGoal ? 'Goal updated.' : 'Goal added.', 'good');
@@ -1977,6 +2016,7 @@ function setupPlanner() {
     if (!confirm('Delete this goal? Its seeds stay, just unlinked.')) return;
     state.goals = (state.goals || []).filter((g) => g.id !== editingGoal);
     (state.habits || []).forEach((h) => { if (h.goalId === editingGoal) h.goalId = null; });
+    groveSig = null;
     save(); closeGoalSheet(); go('today'); toast('Goal deleted.');
   });
 }
@@ -2259,10 +2299,14 @@ function boot() {
   window.addEventListener('scroll', onScroll, { passive: true });
   onScroll();
   document.addEventListener('visibilitychange', () => {
-    if (document.hidden) return;
+    if (document.hidden) { flushSave(); return; }
+    /* A phone sits backgrounded overnight; coming back after midnight has to
+       roll the day over, not show yesterday's list. */
+    if (bootDay !== dayKey()) { bootDay = dayKey(); groveSig = null; }
     if (current === 'today') renderToday();
     if (current === 'decks') renderDecks();
   });
+  addEventListener('pagehide', flushSave);
 
   const hash = location.hash.slice(1);
   go(['today', 'decks', 'more'].includes(hash) ? hash : 'today');
