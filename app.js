@@ -56,6 +56,20 @@ function todayCount() {
   return d.day === dayKey() ? d.count : 0;
 }
 
+/* null = gate on · 'off' = gate off entirely · a day key = paused for that day */
+function gatePaused() {
+  const p = state.settings && state.settings.gatePause;
+  if (!p) return false;
+  if (p === 'off') return true;
+  return p === dayKey();          // a day-pause expires on its own overnight
+}
+function setGatePause(v) {
+  state.settings.gatePause = v;
+  save(); writeNow();             // unlock immediately, not after the debounce
+  if (current === 'today') renderToday();
+  if (current === 'more') renderSettings();
+}
+
 function publishStatus() {
   const today = dayKey();
   syncLinkedHabits();
@@ -70,15 +84,18 @@ function publishStatus() {
   const due = state.decks.reduce((n, d) => n + deckLeftTonight(d, today), 0);
   const reviewed = todayCount();
   const target = state.settings.target;
-  const done = anyGate ? blockers.length === 0 : (due === 0 || reviewed >= target);
+  /* A gate you cannot open from the inside is a lock, not a habit. Pausing
+     reports the day as done, which is all the blocker asks about. */
+  const paused = gatePaused();
+  const done = paused ? true : anyGate ? blockers.length === 0 : (due === 0 || reviewed >= target);
 
   try {
     localStorage.setItem(STATUS_KEY, JSON.stringify({
       day: today,
       due, reviewed, target,
-      remaining: anyGate ? blockers.length : Math.max(0, Math.min(due, target - reviewed)),
-      blockers: blockers.map((h) => h.name),
-      done,
+      remaining: paused ? 0 : anyGate ? blockers.length : Math.max(0, Math.min(due, target - reviewed)),
+      blockers: paused ? [] : blockers.map((h) => h.name),
+      done, paused,
       updated: new Date().toISOString(),
     }));
   } catch (_) { /* storage full — the gate simply stays shut */ }
@@ -597,12 +614,21 @@ function renderToday() {
 
   renderHarvest(habits.length > 0 && !blockers.length);
 
+  const paused = gatePaused();
   const gate = $('#gate');
   gate.hidden = !habits.some((h) => h.gate);
-  gate.classList.toggle('open', !blockers.length);
-  $('#gateText').textContent = blockers.length
-    ? `${blockers.map((h) => h.name).join(', ')} — then the gate opens`
-    : 'The gate is open.';
+  gate.classList.toggle('open', paused || !blockers.length);
+  $('#gateText').textContent = paused
+    ? (state.settings.gatePause === 'off' ? 'The gate is off.' : 'Paused for today.')
+    : blockers.length
+      ? `${blockers.map((h) => h.name).join(', ')} — then the gate opens`
+      : 'The gate is open.';
+  /* Offered right next to the lock, because that is where you are standing
+     when you need it. */
+  const pauseBtn = $('#gatePauseBtn');
+  pauseBtn.hidden = gate.hidden;
+  pauseBtn.textContent = paused ? 'Turn the gate back on' : 'Pause the gate';
+  pauseBtn.classList.toggle('on', paused);
 
   const goals = state.goals || [];
   const sig = groveSignature(goals, habits);
@@ -2140,6 +2166,11 @@ function setupPlanner() {
      yet at boot. Binding them here threw, and because every listener in this
      function sat behind that one line, the whole seed and goal editor was
      never wired: no save, no delete, not even cancel. They bind per render. */
+  on('#gatePauseBtn', 'click', () => {
+    if (gatePaused()) { setGatePause(null); toast('Gate back on.'); return; }
+    setGatePause(dayKey());
+    toast('Gate paused for today. It comes back tomorrow.', 'good');
+  });
   on('#hCancel', 'click', closeHabitSheet);
   on('#gCancel', 'click', closeGoalSheet);
   on('#habitScrim', 'click', (e) => { if (e.target === $('#habitScrim')) closeHabitSheet(); });
@@ -2231,6 +2262,13 @@ function openDeckSheet(deckId = null) {
 /* ───────────────────────── settings ───────────────────────── */
 function renderSettings() {
   $('#targetVal').textContent = state.settings.target;
+  const off = state.settings.gatePause === 'off';
+  $('#gateSwitch').setAttribute('aria-checked', String(!off));
+  $('#gateStateHint').textContent = off
+    ? 'Off. Nothing is blocked, whatever is left undone.'
+    : state.settings.gatePause === dayKey()
+      ? 'Paused for today. It comes back tomorrow.'
+      : "Blocks the entertainment sites until today's seeds are done.";
   $('#requeueSwitch').setAttribute('aria-checked', String(!!state.settings.requeue));
   const key = state.settings.apiKey || '';
   $('#apiKey').value = key;
@@ -2242,6 +2280,11 @@ function setupSettings() {
   $('#targetUp').addEventListener('click', () => { state.settings.target = Math.min(100, state.settings.target + 5); save(); renderSettings(); });
   $('#targetDown').addEventListener('click', () => { state.settings.target = Math.max(5, state.settings.target - 5); save(); renderSettings(); });
   $('#requeueSwitch').addEventListener('click', () => { state.settings.requeue = !state.settings.requeue; save(); renderSettings(); });
+  $('#gateSwitch').addEventListener('click', () => {
+    const off = state.settings.gatePause === 'off';
+    setGatePause(off ? null : 'off');
+    toast(off ? 'Gate back on.' : 'Gate off. Nothing is blocked.');
+  });
 
   $('#keyPeek').addEventListener('click', () => {
     const f = $('#apiKey');

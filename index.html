@@ -46,7 +46,10 @@
     <div class="hero">
       <p class="eyebrow" id="todayGreeting">Good evening</p>
       <h1 class="today-line" id="todayLine">Today</h1>
-      <div class="gate" id="gate" hidden><span class="gate-dot"></span><span id="gateText">—</span></div>
+      <div class="gate-row">
+        <div class="gate" id="gate" hidden><span class="gate-dot"></span><span id="gateText">—</span></div>
+        <button class="gate-pause" id="gatePauseBtn" hidden>Pause the gate</button>
+      </div>
 
       <!-- the day's reward: it grows with the streak -->
       <div class="harvest" id="harvest" hidden>
@@ -314,6 +317,10 @@ opportunity cost&#9;what you gave up"></textarea></label>
       <div class="row">
         <div><strong>Missed cards come back</strong><p class="hint">Re-queue a missed card at the end of the same session.</p></div>
         <button class="switch" id="requeueSwitch" role="switch" aria-checked="false"><span></span></button>
+      </div>
+      <div class="row">
+        <div><strong>The gate</strong><p class="hint" id="gateStateHint">Blocks the entertainment sites until today's seeds are done.</p></div>
+        <button class="switch" id="gateSwitch" role="switch" aria-checked="true"><span></span></button>
       </div>
     </div>
 
