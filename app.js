@@ -23,7 +23,7 @@ const CURRICULUM_DECK = 'deck-business';
 const MATH_DECK = 'deck-math';
 const WORLD_DECK = 'deck-world';
 const LEADERS_DECK = 'deck-leaders';
-const SEED_VERSION = 7;   // bump whenever curriculum.js gains cards, or installs never see them
+const SEED_VERSION = 8;   // bump whenever curriculum.js gains cards, or installs never see them
 
 const DECK_COLORS = ['#6d8340', '#3f7d78', '#8a5a9e', '#b06a35', '#3f6ba8', '#a8496a', '#7a7f45', '#4a7f4f'];
 
@@ -2163,6 +2163,32 @@ function setupModals() {
     editingDeck ? go(current === 'decks' ? 'decks' : 'deck') : go('deck');
     toast(editingDeck ? 'Deck updated.' : 'Deck created.', 'good');
   });
+  /* Start the deck again from the beginning without losing the cards. Useful
+     when the plan behind a deck has changed and its boxes no longer reflect
+     the order you want to learn in. */
+  $('#dReset').addEventListener('click', () => {
+    const d = state.decks.find((x) => x.id === editingDeck); if (!d) return;
+    const cards = deckCards(d.id);
+    const touched = cards.filter((c) => c.seen || c.lastReviewed).length;
+    const btn = $('#dReset');
+    if (btn.dataset.armed !== d.id) {
+      btn.dataset.armed = d.id;
+      btn.textContent = `Reset ${touched} card${touched === 1 ? '' : 's'} to the start`;
+      btn.classList.add('armed');
+      setTimeout(() => { if (btn.dataset.armed === d.id) resetDeleteBtn(); }, 5000);
+      return;
+    }
+    cards.forEach((c) => {
+      c.box = 1; c.mastered = false; c.lastReviewed = null;
+      c.seen = 0; c.right = 0;
+      if (c.passageId) { c.stage = 0; c.reps = 0; }     // a passage starts from reading again
+    });
+    if (state.daily && state.daily.decks) delete state.daily.decks[d.id];
+    resetDeleteBtn();
+    save(); $('#deckScrim').hidden = true;
+    go(current === 'decks' ? 'decks' : 'deck');
+    toast(`${d.name} is back at the start.`, 'good');
+  });
   $('#dDelete').addEventListener('click', () => {
     const d = state.decks.find((x) => x.id === editingDeck); if (!d) return;
     const n = deckCards(d.id).length;
@@ -2325,6 +2351,10 @@ function resetDeleteBtn() {
   delete btn.dataset.armed;
   btn.textContent = 'Delete deck';
   btn.classList.remove('armed');
+  const r = $('#dReset');
+  delete r.dataset.armed;
+  r.textContent = 'Reset progress';
+  r.classList.remove('armed');
 }
 function openDeckSheet(deckId = null) {
   resetDeleteBtn();
@@ -2333,6 +2363,7 @@ function openDeckSheet(deckId = null) {
   $('#deckModalTitle').textContent = d ? 'Edit deck' : 'New deck';
   $('#dName').value = d ? d.name : '';
   $('#dDelete').hidden = !d;
+  $('#dReset').hidden = !d || !deckCards(deckId).some((c) => c.seen || c.lastReviewed);
   $('#dKindField').hidden = !!d;                      // kind is fixed once cards exist
   $$('#dKindSeg .seg-btn').forEach((b) => b.classList.toggle('on', b.dataset.kind === 'plain'));
   requestAnimationFrame(() => moveThumb($('#dKindSeg'), $('#dKindThumb')));
@@ -2523,17 +2554,20 @@ function seed() {
       if (match) { c.seq = match.i; c.principle = match.principle; c.category = match.category; }
     });
 
-    /* Cards from a previous curriculum that no longer exist: drop the ones you
-       have never seen, keep any you have studied. Progress is never discarded
-       to tidy up. */
+    /* Cards from a previous curriculum that no longer exist are retired, even
+       if you studied them. Keeping them "so progress is not lost" was worse
+       than losing it: they stayed in their Leitner boxes, and reviews are
+       served before new material, so a replaced curriculum kept pushing its
+       old strategy cards in front of the language of business you had
+       deliberately put first. A card that is no longer in the plan should not
+       be on tonight's list. */
     const before = state.cards.length;
     state.cards = state.cards.filter((c) => {
       if (c.deckId !== CURRICULUM_DECK || c.source !== 'seed') return true;
-      if (byFront.has(c.front.trim().toLowerCase())) return true;
-      return c.seen > 0;
+      return byFront.has(c.front.trim().toLowerCase());
     });
     const pruned = before - state.cards.length;
-    if (pruned) console.info(`Curriculum: retired ${pruned} unseen cards from the old ordering.`);
+    if (pruned) console.info(`Curriculum: retired ${pruned} cards that are no longer in the curriculum.`);
     state.seedVersion = SEED_VERSION;
     if (added) console.info(`Learn Things Good: added ${added} curriculum cards.`);
   }
