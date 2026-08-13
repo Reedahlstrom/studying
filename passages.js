@@ -124,3 +124,23 @@ export function estimate(text, ambitionId = 'normal') {
 export function estimateAll(text) {
   return Object.values(AMBITION).map((a) => ({ ...a, ...estimate(text, a.id) }));
 }
+
+/* Progressive fading. Going straight from the whole line to first letters is a
+   cliff; removing the text gradually is what the memorisation research
+   actually describes. Level 0 is the line, 3 is nothing at all.
+   Punctuation stays throughout — it is the shape of the sentence. */
+export function fadeText(text, level) {
+  if (level <= 0) return String(text);
+  if (level >= 3) return '';
+  const words = String(text).replace(/\s+/g, ' ').trim().split(' ');
+  if (level === 2) return firstLetters(text);
+  /* level 1 — blank every other word worth blanking. Picking by absolute
+     position left short lines untouched: "It is not the critic who counts"
+     came back whole, which is not a gap to fill. */
+  let n = 0;
+  return words.map((w) => {
+    const core = w.replace(/[^A-Za-z0-9']/g, '');
+    if (core.length <= 2) return w;                 // the, a, of carry nothing
+    return (n++ % 2 === 1) ? w.replace(/[A-Za-z0-9']/g, '_') : w;
+  }).join(' ');
+}

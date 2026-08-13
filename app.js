@@ -5,7 +5,7 @@
 import { PHASES, PRINCIPLES, CURRICULUM_CARDS } from './curriculum.js';
 import { MATH_CARDS } from './math.js';
 import { COUNTRY_CARDS, LEADER_CARDS, LEADER_STAMP } from './countries.js';
-import { AMBITION, chunkText, firstLetters, gradeTyping, estimateAll, wordsIn } from './passages.js';
+import { AMBITION, chunkText, firstLetters, fadeText, gradeTyping, estimateAll, wordsIn } from './passages.js';
 import * as PLAN from './planner.js';
 import { CADENCE, perWeekOf, requiredToday, availableToday, gateBlockers, gateOpen, didOn, stats as habitStats, goalProgress } from './planner.js';
 
@@ -322,10 +322,13 @@ function syncLinkedHabits() {
    it from first letters, then type it. After that it rides the same
    Leitner boxes as everything else.
    Stages: 0 read · 1 first letters · 2 type it · 3 learned (review). */
-const STAGE_LABEL = ['Read it', 'From the first letters', 'Type it from memory', 'Type it from memory'];
-/* How far through a line's rungs each stage sits, so the progress bar moves
-   as you climb instead of sitting frozen while the same line comes back. */
-const STAGE_PROGRESS = [0, 0.34, 0.67, 0.67];
+/* A line is learned by having the text taken away from you a bit at a time,
+   and the last rung runs it on from the lines before it — the joints between
+   lines are where a passage actually falls apart. */
+const STAGE_LABEL = ['Read it', 'Fill the gaps', 'From the first letters', 'Say it in the run', 'Say it in the run'];
+const STAGE_PROGRESS = [0, 0.25, 0.5, 0.75, 0.75];
+/* how many lines before it to run into the new one */
+const CHAIN_WINDOW = 4;
 const passagesIn = (deckId) => (state.passages || []).filter((p) => p.deckId === deckId);
 const chunksOf = (passageId) => state.cards.filter((c) => c.passageId === passageId)
   .sort((a, b) => a.order - b.order);
@@ -387,24 +390,22 @@ function releaseDailyLines() {
 /* Grading a chunk: advance the ritual, then hand it to the Leitner boxes. */
 function advanceChunk(card, ok) {
   card.seen += 1;
-  if (card.stage === 0) {                       // reading
-    /* One read, then straight to recall. Showing the identical line twice in
-       a row taught nothing and made the ladder feel stuck. */
+  if (card.stage === 0) {                       // read it once, then recall
     card.reps = (card.reps || 0) + 1;
     card.stage = 1;
-  } else if (card.stage === 1) {                // first letters
-    if (ok) card.stage = 2; else card.reps = 0;
-  } else {                                      // typing — the real test
+  } else if (card.stage === 1 || card.stage === 2) {   // gaps, then first letters
+    if (ok) card.stage += 1; else card.stage = Math.max(0, card.stage - 1);
+  } else {                                      // stage 3+ — say it in the run
     if (ok) {
       card.right += 1;
       card.lastReviewed = dayKey();
-      if (card.stage === 2) { card.stage = 3; card.box = 2; }   // learned; enters the ladder
+      if (card.stage === 3) { card.stage = 4; card.box = 2; }   // learned; enters the ladder
       else if (card.box >= BOX_COUNT) card.mastered = true;
       else card.box += 1;
     } else {
       card.box = 1;
-      card.lastReviewed = null;                 // wrong means due again tonight
-      card.stage = 1;                           // drop back to the first-letter rung
+      card.lastReviewed = null;                 // missed means due again tonight
+      card.stage = 2;                           // back to the first-letter rung
     }
   }
   save();
@@ -1277,7 +1278,7 @@ function showChunk() {
 
   /* A line still being learned has no box yet — showing "Box 1" made the
      ladder look like it had already failed you. */
-  $('#cardBox').hidden = card.stage < 3;
+  $('#cardBox').hidden = card.stage < 4;   // no box until it has entered the ladder
   $('#cardBox').textContent = `Box ${card.box}`;
 
   $('#backCard').hidden = !canStepBack();
@@ -1300,32 +1301,35 @@ function showChunk() {
   $('#progressFill').style.width = `${(climbed / total) * 100}%`;
 
   const text = $('#memText');
+  const all = passage ? chunksOf(passage.id) : [];
+  const idx = all.findIndex((x) => x.id === card.id);
+  const lead = $('#memLead');
+  lead.hidden = true; lead.innerHTML = '';
+  input.hidden = true;
+  session.peeked = false;
+
   if (stage === 0) {
-    text.hidden = false; text.classList.remove('cue'); text.textContent = card.front;
-    input.hidden = true;
+    text.hidden = false; text.className = 'mem-text'; text.textContent = card.front;
     $('#memActions').innerHTML = '<button class="btn primary" data-mem="read">I have read it</button>';
-  } else if (stage === 1) {
-    text.hidden = false; text.classList.add('cue'); text.textContent = firstLetters(card.front);
-    input.hidden = true;
+  } else if (stage === 1 || stage === 2) {
+    /* the text is taken away a bit at a time rather than all at once */
+    text.hidden = false; text.className = 'mem-text cue'; text.textContent = fadeText(card.front, stage);
     $('#memActions').innerHTML =
       '<button class="btn ghost" data-mem="peek">Show me</button>' +
-      '<button class="btn primary" data-mem="recalled">I said it right</button>';
+      '<button class="btn primary" data-mem="reveal">Say it, then check</button>';
   } else {
-    /* The typing stage used to show nothing at all, so a line coming back for
-       review gave you no way to know which line was wanted — it read as the
-       app skipping past lines. A passage is a chain: the cue for a line is
-       the line before it. */
-    const all = passage ? chunksOf(passage.id) : [];
-    const idx = all.findIndex((x) => x.id === card.id);
-    const prev = idx > 0 ? all[idx - 1] : null;
-    text.hidden = false; text.classList.remove('cue'); text.classList.add('lead-in');
-    text.textContent = prev ? `…${prev.front}` : 'Start from the beginning.';
-    input.hidden = false;
-    input.placeholder = prev ? 'Type the line that comes next…' : 'Type the opening line…';
+    /* the run: the lines before it, then this one from nothing. The joints
+       between lines are where a passage falls apart, so they get rehearsed
+       every single time rather than never. */
+    const from = Math.max(0, idx - CHAIN_WINDOW);
+    const run = all.slice(from, idx);
+    lead.hidden = !run.length;
+    lead.innerHTML = run.map((c) => `<span class="run-line">${esc(firstLetters(c.front))}</span>`).join('');
+    text.hidden = false; text.className = 'mem-text cue blank';
+    text.textContent = run.length ? '… and then?' : 'Say the opening line.';
     $('#memActions').innerHTML =
-      '<button class="btn ghost" data-mem="hint">Hint</button>' +
-      '<button class="btn primary" data-mem="check">Check</button>';
-    setTimeout(() => input.focus(), 80);
+      '<button class="btn ghost" data-mem="type">Type it instead</button>' +
+      '<button class="btn primary" data-mem="reveal">Say it, then check</button>';
   }
   if (stage < 2) { text.classList.remove('lead-in'); }
   /* You were learning line 7 having never seen the piece whole. The context
@@ -1393,17 +1397,46 @@ function memAction(what) {
   }
 
   if (what === 'read') { snapshotStep(card); advanceChunk(card, true); return showChunk(); }
-  if (what === 'recalled') {
-    /* Self-grading blind is worthless — show the line so "I said it right"
-       means something, then move on. */
-    const text = $('#memText');
-    if (text.classList.contains('cue')) {
-      text.classList.remove('cue');
-      text.textContent = card.front;
-      $('#memActions').innerHTML = '<button class="btn primary" data-mem="recalled">That matches — next</button>';
-      return;
+
+  /* Say it out loud, then see the line and mark yourself. Speaking is how you
+     will actually deliver it, and it keeps a session to a couple of minutes
+     instead of typing every word. */
+  if (what === 'reveal') {
+    $('#memLead').hidden = true;
+    const t = $('#memText');
+    t.className = 'mem-text';
+    t.textContent = card.front;
+    $('#memActions').innerHTML =
+      '<button class="btn miss" data-mem="missed"><span>Missed it</span></button>' +
+      '<button class="btn got" data-mem="had"><span>I had it</span></button>';
+    return;
+  }
+  if (what === 'had' || what === 'missed') {
+    const ok = what === 'had';
+    snapshotStep(card);
+    advanceChunk(card, ok);
+    ok ? session.right++ : session.wrong++;
+    buzz(ok ? 12 : 22);
+    /* A line still climbing comes back later in the same session rather than
+       immediately: spacing inside the session is the point, and showing the
+       same line four times in a row is what made this feel like a treadmill. */
+    if (card.stage < 4 && !session.requeued.has(card.id + ':' + card.stage)) {
+      session.requeued.add(card.id + ':' + card.stage);
+      session.queue.push(card);
     }
-    snapshotStep(card); advanceChunk(card, true); return showChunk();
+    return nextChunk();
+  }
+
+  /* typing stays available for anyone who wants the strict version */
+  if (what === 'type') {
+    const input = $('#memInput');
+    input.hidden = false; input.value = '';
+    input.placeholder = 'Type the line…';
+    $('#memActions').innerHTML =
+      '<button class="btn ghost" data-mem="hint">Hint</button>' +
+      '<button class="btn primary" data-mem="check">Check</button>';
+    setTimeout(() => input.focus(), 60);
+    return;
   }
   if (what === 'continue') return nextChunk();
 }

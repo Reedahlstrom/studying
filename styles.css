@@ -1079,3 +1079,16 @@ select { padding-right: 38px; cursor: pointer; }
 
 /* Back a step — sits beside the close button, only when there is a step to undo */
 #backCard svg { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+/* The run: the lines before this one, as first letters, so every joint gets
+   rehearsed rather than each line being learned as an island. */
+.mem-lead {
+  display: grid; gap: 4px; margin-bottom: 14px; padding-bottom: 12px;
+  border-bottom: 1px dashed var(--line-soft);
+}
+.run-line {
+  font: 500 13.5px/1.6 ui-monospace, SFMono-Regular, monospace;
+  color: var(--text-faint); letter-spacing: .02em; text-wrap: pretty;
+}
+.run-line:last-child { color: var(--text-dim); }
+.mem-text.blank { color: var(--text-faint); font-style: italic; }
