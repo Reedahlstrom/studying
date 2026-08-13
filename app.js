@@ -1315,7 +1315,7 @@ function showChunk() {
     /* the text is taken away a bit at a time rather than all at once */
     text.hidden = false; text.className = 'mem-text cue'; text.textContent = fadeText(card.front, stage);
     $('#memActions').innerHTML =
-      '<button class="btn ghost" data-mem="peek">Show me</button>' +
+      '<button class="btn miss" data-mem="missed"><span>Missed it</span></button>' +
       '<button class="btn primary" data-mem="reveal">Say it, then check</button>';
   } else {
     /* the run: the lines before it, then this one from nothing. The joints
@@ -1328,12 +1328,15 @@ function showChunk() {
     text.hidden = false; text.className = 'mem-text cue blank';
     text.textContent = run.length ? '… and then?' : 'Say the opening line.';
     $('#memActions').innerHTML =
-      '<button class="btn ghost" data-mem="type">Type it instead</button>' +
+      '<button class="btn miss" data-mem="missed"><span>Missed it</span></button>' +
       '<button class="btn primary" data-mem="reveal">Say it, then check</button>';
   }
   if (stage < 2) { text.classList.remove('lead-in'); }
   /* You were learning line 7 having never seen the piece whole. The context
      is collapsed by default so it can't be used as a crutch. */
+  const peekBtn = $('#memPeekBtn');
+  peekBtn.hidden = !(stage === 1 || stage === 2);
+  peekBtn.textContent = 'Show me the line';
   const ctx = $('#memContext'), ctxBtn = $('#memContextBtn');
   ctx.hidden = true;
   ctxBtn.textContent = 'Show the whole passage';
@@ -1360,8 +1363,8 @@ function memAction(what) {
     const cued = t.classList.contains('cue');        // currently showing the letters
     t.classList.toggle('cue', !cued);
     t.textContent = cued ? card.front : firstLetters(card.front);
-    const btn = $('#memActions [data-mem="peek"]');
-    if (btn) btn.textContent = cued ? 'Hide it' : 'Show me';
+    const btn = $('#memPeekBtn');
+    if (btn) btn.textContent = cued ? 'Hide the line' : 'Show me the line';
     return;
   }
   if (what === 'hint') { $('#memDiff').hidden = false; $('#memDiff').innerHTML = `<span class="cue-inline">${esc(firstLetters(card.front))}</span>`; return; }
@@ -1404,11 +1407,22 @@ function memAction(what) {
   if (what === 'reveal') {
     $('#memLead').hidden = true;
     const t = $('#memText');
-    t.className = 'mem-text';
+    t.className = 'mem-text shown';
     t.textContent = card.front;
     $('#memActions').innerHTML =
       '<button class="btn miss" data-mem="missed"><span>Missed it</span></button>' +
       '<button class="btn got" data-mem="had"><span>I had it</span></button>';
+    return;
+  }
+  if (what === 'missed' && !$('#memText').classList.contains('shown')) {
+    /* Missing it is when you most need to see the line. Show it, then move on
+       — one tap to record the miss, not two. */
+    $('#memLead').hidden = true;
+    const t = $('#memText');
+    t.className = 'mem-text shown';
+    t.textContent = card.front;
+    $('#memActions').innerHTML =
+      '<button class="btn primary" data-mem="missed">Got it — keep going</button>';
     return;
   }
   if (what === 'had' || what === 'missed') {
@@ -2644,6 +2658,7 @@ function boot() {
   $('#memInput').addEventListener('keydown', (e) => {
     if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); memAction('check'); }
   });
+  $('#memPeekBtn').addEventListener('click', () => memAction('peek'));
   $('#memContextBtn').addEventListener('click', () => {
     const ctx = $('#memContext');
     ctx.hidden = !ctx.hidden;
