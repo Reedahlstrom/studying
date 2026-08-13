@@ -1076,3 +1076,6 @@ select { padding-right: 38px; cursor: pointer; }
 .gate-pause:hover { color: var(--text-dim); border-color: var(--line); }
 .gate-pause.on { color: var(--olive-deep); border-color: color-mix(in srgb, var(--olive) 40%, transparent); background: var(--olive-soft); }
 [data-theme="dark"] .gate-pause.on { color: var(--olive); }
+
+/* Back a step — sits beside the close button, only when there is a step to undo */
+#backCard svg { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }

@@ -1256,6 +1256,7 @@ function showCard() {
   const label = card.category || (activeDeck() || {}).name || '';
   $('#cardCat').textContent = label;
   $('#cardCat').hidden = !label;
+  $('#backCard').hidden = !canStepBack();
   $('#cardBox').hidden = false;
   $('#cardBox').textContent = `Box ${card.box}`;
   $('.tap-hint').textContent = hasKeyboard() ? 'tap or press space' : 'tap to reveal';
@@ -1279,6 +1280,7 @@ function showChunk() {
   $('#cardBox').hidden = card.stage < 3;
   $('#cardBox').textContent = `Box ${card.box}`;
 
+  $('#backCard').hidden = !canStepBack();
   const lineNo = (card.order ?? 0) + 1;
   const lineCount = passage ? chunksOf(passage.id).length : 0;
   $('#memPassage').textContent = passage
@@ -1347,7 +1349,17 @@ function memAction(what) {
   const card = session.queue[session.i];
   if (!card) return;
 
-  if (what === 'peek') { $('#memText').classList.remove('cue'); $('#memText').textContent = card.front; return; }
+
+  if (what === 'peek') {
+    /* a peek you cannot take back is just the answer */
+    const t = $('#memText');
+    const cued = t.classList.contains('cue');        // currently showing the letters
+    t.classList.toggle('cue', !cued);
+    t.textContent = cued ? card.front : firstLetters(card.front);
+    const btn = $('#memActions [data-mem="peek"]');
+    if (btn) btn.textContent = cued ? 'Hide it' : 'Show me';
+    return;
+  }
   if (what === 'hint') { $('#memDiff').hidden = false; $('#memDiff').innerHTML = `<span class="cue-inline">${esc(firstLetters(card.front))}</span>`; return; }
 
   if (what === 'check') {
@@ -1363,6 +1375,7 @@ function memAction(what) {
     $('#memDiff').innerHTML = result.marks.map((m) => `<span class="${m.ok ? 'ok' : 'no'}">${esc(m.word)}</span>`).join(' ');
     if (result.exact) {
       toast('Word perfect.', 'good'); buzz(14);
+      snapshotStep(card);
       advanceChunk(card, true); session.right++;
       setTimeout(nextChunk, 900);
     } else {
@@ -1371,13 +1384,15 @@ function memAction(what) {
          what you were meant to have written. */
       $('#memDiff').insertAdjacentHTML('beforeend',
         `<p class="mem-truth"><span>the line was</span>${esc(card.front)}</p>`);
+      snapshotStep(card);
       advanceChunk(card, false); session.wrong++;
       $('#memActions').innerHTML = '<button class="btn primary" data-mem="continue">Got it — keep going</button>';
+      $('#backCard').hidden = !canStepBack();   // the miss itself is undoable
     }
     return;
   }
 
-  if (what === 'read') { advanceChunk(card, true); return showChunk(); }
+  if (what === 'read') { snapshotStep(card); advanceChunk(card, true); return showChunk(); }
   if (what === 'recalled') {
     /* Self-grading blind is worthless — show the line so "I said it right"
        means something, then move on. */
@@ -1388,7 +1403,7 @@ function memAction(what) {
       $('#memActions').innerHTML = '<button class="btn primary" data-mem="recalled">That matches — next</button>';
       return;
     }
-    advanceChunk(card, true); return showChunk();
+    snapshotStep(card); advanceChunk(card, true); return showChunk();
   }
   if (what === 'continue') return nextChunk();
 }
@@ -1399,6 +1414,42 @@ function nextChunk() {
   $('#progressFill').style.width = `${(session.i / session.queue.length) * 100}%`;
   session.i >= session.queue.length ? finishSession() : showChunk();
 }
+
+/* Undo for the last step. Snapshot everything a grade touches — the card, the
+   session counters, the day's tallies — so going back really goes back rather
+   than leaving a promotion behind. */
+function snapshotStep(card) {
+  if (!session) return;
+  session.history = session.history || [];
+  session.history.push({
+    i: session.i,
+    card: { ...card },
+    right: session.right, wrong: session.wrong,
+    queueLen: session.queue.length,
+    requeued: [...(session.requeued || [])],
+    daily: JSON.parse(JSON.stringify(state.daily || {})),
+    streak: { ...(state.streak || {}) },
+  });
+  if (session.history.length > 40) session.history.shift();
+}
+function stepBack() {
+  if (!session || !session.history || !session.history.length) return;
+  const h = session.history.pop();
+  const live = state.cards.find((c) => c.id === h.card.id);
+  if (live) Object.assign(live, h.card);
+  /* a missed card may have been pushed back onto the queue — undo that too */
+  if (session.queue.length > h.queueLen) session.queue.length = h.queueLen;
+  session.requeued = new Set(h.requeued);
+  session.i = h.i;
+  session.right = h.right; session.wrong = h.wrong;
+  state.daily = h.daily; state.streak = h.streak;
+  session.revealed = false;
+  save();
+  $('#sessionDone').hidden = true;
+  buzz(8);
+  session.text ? showChunk() : showCard();
+}
+const canStepBack = () => !!(session && session.history && session.history.length);
 
 function bumpDaily(deckId = state.activeDeck) {
   bumpStreak();
@@ -1445,6 +1496,7 @@ function answer(correct) {
   const slot = $('#cardSlot');
   if (slot.classList.contains('leave-left') || slot.classList.contains('leave-right')) return;
   const card = session.queue[session.i];
+  snapshotStep(card);
   grade(card, correct);
   correct ? session.right++ : session.wrong++;
   bumpDaily();
@@ -2537,6 +2589,7 @@ function boot() {
   $('#gotBtn').addEventListener('click', () => answer(true));
   $('#missBtn').addEventListener('click', () => answer(false));
   /* go back where you came from, not always to the deck page */
+  $('#backCard').addEventListener('click', stepBack);
   $('#endSession').addEventListener('click', () => go(cameFrom));
   $('#doneHome').addEventListener('click', () => go(cameFrom));
   /* session is cleared by the time this fires, so the old `session.filter`
@@ -2565,7 +2618,9 @@ function boot() {
     /* space flips, both ways — it never grades, so a stray press cannot mark
        a card you have not read */
     if (k === ' ' || k === 'enter') { e.preventDefault(); reveal(); return; }
+    if (k === 'backspace' || k === 'z') { e.preventDefault(); stepBack(); return; }
     if (!session.revealed) return;
+    if (k === 'backspace' || k === 'z') { e.preventDefault(); stepBack(); return; }
     if (k === 'd' || k === '1' || k === 'arrowleft') { e.preventDefault(); answer(false); }
     if (k === 'f' || k === '2' || k === 'arrowright') { e.preventDefault(); answer(true); }
   });
