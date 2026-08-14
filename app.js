@@ -177,6 +177,7 @@ function adoptExternalWrite(raw) {
        nothing will ever save. It waits until the session is over. */
     if (session || gsession) { pendingMerge = raw; return; }
     state = hydrate(mergeStates(state, incoming));
+    lastBody = JSON.stringify(state);      // we are in step with storage now
     groveSig = null;
     if (current === 'today') renderToday();
     else if (current === 'decks') renderDecks();
@@ -248,17 +249,28 @@ function normalizeCard(c) {
 }
 
 let saveTimer = null;
+let lastBody = null;
 function writeNow() {
   clearTimeout(saveTimer);
   saveTimer = null;
+  /* Nothing changed, nothing to write. Without this, any unconditional save in
+     a render path can bounce between two open tabs forever: each write wakes
+     the other, which renders, which writes. */
+  const body = JSON.stringify(state);
+  if (body === lastBody) return;
+  lastBody = body;
   /* Stamp every write. A second tab of this app, opened hours ago, holds an
      old copy of everything in memory — and the moment it renders anything it
      saves, writing its stale copy over a morning's work. The stamp lets a tab
      notice it has been overtaken. */
   state.rev = (state.rev || 0) + 1;
   state.savedAt = new Date().toISOString();
-  try { localStorage.setItem(STORE_KEY, JSON.stringify(state)); publishStatus(); }
-  catch (e) { toast('Could not save — storage is full.', 'bad'); }
+  try {
+    const out = JSON.stringify(state);
+    localStorage.setItem(STORE_KEY, out);
+    lastBody = out;                     // exactly what is on disk
+    publishStatus();
+  } catch (e) { toast('Could not save — storage is full.', 'bad'); }
 }
 function save() {
   clearTimeout(saveTimer);
@@ -460,6 +472,7 @@ function addPassage(deck, title, text, ambitionId) {
 /* A chunk is only in play once it has been introduced on some day. */
 function introduceChunks(deck) {
   const today = dayKey();
+  let released = false;
   let budget = 0;
   for (const p of passagesIn(deck.id)) budget = Math.max(budget, (AMBITION[p.ambition] || AMBITION.normal).wordsPerDay);
   for (const p of passagesIn(deck.id)) {
@@ -475,9 +488,13 @@ function introduceChunks(deck) {
       if (spent > 0 && spent + cost > perDay) break;
       c.intro = today;
       spent += cost;
+      released = true;
     }
   }
-  save();
+  /* Only when something actually changed. This ran on every render and saved
+     unconditionally, which with two tabs open became a loop: each save woke
+     the other tab, which rendered, which saved. */
+  if (released) save();
 }
 
 /* Release today's lines for every text deck. Idempotent, so it is safe to call

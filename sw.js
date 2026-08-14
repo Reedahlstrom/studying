@@ -1,5 +1,5 @@
 /* Learn Things Good service worker — offline-first app shell. */
-const VERSION = 'ledger-v30';
+const VERSION = 'ledger-v31';
 const ASSETS = [
   './',
   './index.html',
