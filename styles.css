@@ -1241,3 +1241,4 @@ select { padding-right: 38px; cursor: pointer; }
 /* the country under the question keeps its own colour, so its shape reads */
 #view-globe { --globe-marked-fill: #9fbe78; }
 [data-theme="dark"] #view-globe { --globe-marked-fill: #93c46e; }
+.quick-row.three { grid-template-columns: repeat(3, 1fr); }

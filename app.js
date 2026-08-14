@@ -479,6 +479,15 @@ let current = 'decks';
 function go(view, opts = {}) {
   const needsDeck = ['deck', 'path', 'study', 'add', 'browse', 'globe'].includes(view);
   if (needsDeck && !activeDeck()) view = 'decks';
+  /* This deck has no card view. Every route into studying it — the deck page,
+     the quick row, a seed on the Goals page, a topic, a direct hash — arrives
+     at the globe instead. Guarding only the deck button left the other doors
+     open, and a flashcard asking "which country's capital is Majuro?" is the
+     exact thing the globe exists to replace. */
+  if (view === 'study' && activeDeck() && activeDeck().id === WORLD_DECK) {
+    startGlobe();
+    return;
+  }
   if (view === 'study' && !opts.keepSession) startSession(opts.filter || null);
   if (current === 'study' && view !== 'study') session = null;
   if (current === 'globe' && view !== 'globe') { gsession = null; if (globe) globe.stop(); }
@@ -1009,8 +1018,12 @@ function renderDeck() {
   /* Start session is the globe for this deck, so a second button offering the
      same thing was just noise. The quick row keeps a way back to plain cards. */
   $('#globeLaunch').hidden = true;
-  const studyQuick = $('.quick[data-go="study"] span');
-  if (studyQuick) studyQuick.textContent = deck.id === WORLD_DECK ? 'As cards' : 'Study';
+  const studyQuick = $('.quick[data-go="study"]');
+  if (studyQuick) {
+    studyQuick.hidden = deck.id === WORLD_DECK;      // no card entrance at all
+    studyQuick.querySelector('span').textContent = 'Study';
+  }
+  $('.quick-row').classList.toggle('three', deck.id === WORLD_DECK);
 
   const btn = $('#deckStart');
   if (!cards.length) {
@@ -2728,12 +2741,8 @@ function boot() {
     /* For the countries deck, studying is the globe. Reading "Peru — South
        America" teaches a sentence; finding Peru teaches the map. */
     const d = activeDeck();
-    /* any way of starting this deck is the globe — including studying ahead,
-       which used to quietly drop back to plain cards */
-    if (d && d.id === WORLD_DECK && ['study', 'ahead'].includes($('#deckStart').dataset.action)) {
-      startGlobe();
-      return;
-    }
+    /* studying ahead is the globe too — go() catches the rest */
+    if (d && d.id === WORLD_DECK && $('#deckStart').dataset.action === 'ahead') { startGlobe(); return; }
     cameFrom = 'deck';
     const action = $('#deckStart').dataset.action;
     if (action === 'add') return go('add');
