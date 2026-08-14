@@ -5,6 +5,7 @@
 import { PHASES, PRINCIPLES, CURRICULUM_CARDS } from './curriculum.js';
 import { MATH_CARDS } from './math.js';
 import { COUNTRY_CARDS, LEADER_CARDS, LEADER_STAMP } from './countries.js';
+import { KNOWLEDGE_CARDS } from './knowledge.js';
 import { AMBITION, chunkText, firstLetters, fadeText, gradeTyping, estimateAll, wordsIn } from './passages.js';
 import * as PLAN from './planner.js';
 import { CADENCE, perWeekOf, requiredToday, availableToday, gateBlockers, gateOpen, didOn, stats as habitStats, goalProgress } from './planner.js';
@@ -23,7 +24,8 @@ const CURRICULUM_DECK = 'deck-business';
 const MATH_DECK = 'deck-math';
 const WORLD_DECK = 'deck-world';
 const LEADERS_DECK = 'deck-leaders';
-const SEED_VERSION = 8;   // bump whenever curriculum.js gains cards, or installs never see them
+const KNOWLEDGE_DECK = 'deck-knowledge';
+const SEED_VERSION = 9;   // bump whenever curriculum.js gains cards, or installs never see them
 
 const DECK_COLORS = ['#6d8340', '#3f7d78', '#8a5a9e', '#b06a35', '#3f6ba8', '#a8496a', '#7a7f45', '#4a7f4f'];
 
@@ -196,7 +198,9 @@ const byOrder = (a, b) => (a.seq ?? 1e9) - (b.seq ?? 1e9) || String(a.created).l
 /* Some decks are a designed sequence — the language of business before the
    theory, addition before the times tables. A list of countries is not: its
    alphabetical order carries no meaning and makes every night guessable. */
-const isOrdered = (deck) => isCurriculum(deck) || deck.id === MATH_DECK;
+/* A deck marked ordered was designed as a sequence and is served in it. A list
+   of countries has no sequence worth keeping, so it is shuffled. */
+const isOrdered = (deck) => !!deck.ordered || isCurriculum(deck);
 
 /* Cards about the same thing arrive together — capital, flag, where, leader.
    Served in that order you answer the second and third from the first, which
@@ -1048,7 +1052,10 @@ function renderDeck() {
   });
   $('#topicHead').textContent = isCurriculum(deck) ? 'By phase' : 'By topic';
   $('#catList').innerHTML = groups.size
-    ? [...groups.entries()].sort((a, b) => (isCurriculum(deck)
+    /* If a deck was designed in an order, show its topics in that order —
+       sorting by size buried "How to Know Things" under whichever phase
+       happened to be largest. */
+    ? [...groups.entries()].sort((a, b) => (cards.some((c) => c.seq != null)
         ? Math.min(...a[1].map((c) => c.seq ?? 1e9)) - Math.min(...b[1].map((c) => c.seq ?? 1e9))
         : b[1].length - a[1].length)).map(([name, list]) => `<div class="cat-row">
         <span class="dot" style="background:${deck.color}"></span>
@@ -2505,6 +2512,7 @@ function seed() {
   }
   /* Built for ten a night — arithmetic sticks by repetition, not volume. */
   if (math && !math.daily) math.daily = 10;
+  if (math) math.ordered = true;                 // arithmetic builds on itself
 
   let world = state.decks.find((d) => d.id === WORLD_DECK);
   if (!world && !removed.has(WORLD_DECK)) {
@@ -2512,6 +2520,14 @@ function seed() {
     state.decks.push(world);
   }
   if (world && !world.daily) world.daily = 20;
+  let know = state.decks.find((d) => d.id === KNOWLEDGE_DECK);
+  if (!know && !removed.has(KNOWLEDGE_DECK)) {
+    know = { id: KNOWLEDGE_DECK, name: 'Core Human Knowledge', color: DECK_COLORS[1], kind: 'plain', created: new Date().toISOString() };
+    state.decks.push(know);
+  }
+  if (know && !know.daily) know.daily = 20;
+  know && (know.ordered = true);                 // the phases are a designed order
+
   let leaders = state.decks.find((d) => d.id === LEADERS_DECK);
   if (!leaders && !removed.has(LEADERS_DECK)) {
     leaders = { id: LEADERS_DECK, name: `Who Leads Them (${LEADER_STAMP})`, color: DECK_COLORS[3], kind: 'plain', created: new Date().toISOString() };
@@ -2531,7 +2547,7 @@ function seed() {
       mathHave.add(key);
     });
 
-    for (const [deckId, list] of [[WORLD_DECK, COUNTRY_CARDS], [LEADERS_DECK, LEADER_CARDS]]) {
+    for (const [deckId, list] of [[WORLD_DECK, COUNTRY_CARDS], [LEADERS_DECK, LEADER_CARDS], [KNOWLEDGE_DECK, KNOWLEDGE_CARDS]]) {
       if (removed.has(deckId)) continue;
       const seen = existingFronts(deckId);
       [...list].reverse().forEach((c, revIdx) => {
