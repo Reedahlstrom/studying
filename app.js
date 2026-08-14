@@ -5,6 +5,24 @@
 import { PHASES, PRINCIPLES, CURRICULUM_CARDS } from './curriculum.js';
 import { MATH_CARDS } from './math.js';
 import { COUNTRY_CARDS, LEADER_CARDS, LEADER_STAMP } from './countries.js';
+/* Leaders belong with the country, not in a deck of their own — the globe asks
+   about a place and everything true of it. One card each, and it asks who runs
+   the country: the head of government where that differs from the head of
+   state, since that is the person actually governing. */
+const LEADER_ONE = (() => {
+  const rank = (front) => (/^Who leads/.test(front) ? 0 : /^Head of government/.test(front) ? 1 : 2);
+  const best = {};
+  for (const c of LEADER_CARDS) {
+    if (!c.group) continue;
+    if (!best[c.group] || rank(c.front) < rank(best[c.group].front)) best[c.group] = c;
+  }
+  return Object.entries(best).map(([code, c]) => ({
+    ...c,
+    /* named from the country list, not by unpicking the old question — that
+       produced "Who leads state of Afghanistan?" */
+    front: `Who leads ${META[code] ? META[code].n : code}?`,
+  }));
+})();
 import { KNOWLEDGE_CARDS } from './knowledge.js';
 import { Globe, META, CENTRE } from './globe.js';
 import { AMBITION, chunkText, firstLetters, fadeText, gradeTyping, estimateAll, wordsIn } from './passages.js';
@@ -26,7 +44,7 @@ const MATH_DECK = 'deck-math';
 const WORLD_DECK = 'deck-world';
 const LEADERS_DECK = 'deck-leaders';
 const KNOWLEDGE_DECK = 'deck-knowledge';
-const SEED_VERSION = 9;   // bump whenever curriculum.js gains cards, or installs never see them
+const SEED_VERSION = 10;   // bump whenever curriculum.js gains cards, or installs never see them
 
 const DECK_COLORS = ['#6d8340', '#3f7d78', '#8a5a9e', '#b06a35', '#3f6ba8', '#a8496a', '#7a7f45', '#4a7f4f'];
 
@@ -2560,15 +2578,24 @@ function seed() {
   if (know && !know.daily) know.daily = 20;
   know && (know.ordered = true);                 // the phases are a designed order
 
-  let leaders = state.decks.find((d) => d.id === LEADERS_DECK);
-  if (!leaders && !removed.has(LEADERS_DECK)) {
-    leaders = { id: LEADERS_DECK, name: `Who Leads Them (${LEADER_STAMP})`, color: DECK_COLORS[3], kind: 'plain', created: new Date().toISOString() };
-    state.decks.push(leaders);
+  /* The separate leaders deck is retired: its questions are asked on the globe
+     alongside the country they belong to. Cards that were studied keep their
+     progress — they move into the countries deck rather than being dropped. */
+  const oldLeaders = state.decks.find((d) => d.id === LEADERS_DECK);
+  if (oldLeaders) {
+    const keep = new Set(LEADER_ONE.map((c) => c.group));
+    state.cards.forEach((c) => {
+      if (c.deckId !== LEADERS_DECK) return;
+      if (keep.has(c.group) && /^(Who leads|Head of government of)/.test(c.front)) {
+        c.deckId = WORLD_DECK;
+        c.front = `Who leads ${META[c.group] ? META[c.group].n : c.front.replace(/^.*? of /, '').replace(/\?$/, '')}?`;
+      } else c.deckId = '__drop';
+    });
+    state.cards = state.cards.filter((c) => c.deckId !== '__drop');
+    state.decks = state.decks.filter((d) => d.id !== LEADERS_DECK);
+    state.habits = (state.habits || []).filter((h) => h.deckId !== LEADERS_DECK);
+    state.removed = [...new Set([...(state.removed || []), LEADERS_DECK])];
   }
-  if (leaders && !leaders.daily) leaders.daily = 10;
-  /* The only deck here that rots. Keep the date on the name so a stale answer
-     is obviously stale rather than quietly wrong. */
-  if (leaders) leaders.name = `Who Leads Them (${LEADER_STAMP})`;
 
   if (state.seedVersion < SEED_VERSION) {
     const mathHave = existingFronts(MATH_DECK);
@@ -2579,7 +2606,7 @@ function seed() {
       mathHave.add(key);
     });
 
-    for (const [deckId, list] of [[WORLD_DECK, COUNTRY_CARDS], [LEADERS_DECK, LEADER_CARDS], [KNOWLEDGE_DECK, KNOWLEDGE_CARDS]]) {
+    for (const [deckId, list] of [[WORLD_DECK, [...COUNTRY_CARDS, ...LEADER_ONE]], [KNOWLEDGE_DECK, KNOWLEDGE_CARDS]]) {
       if (removed.has(deckId)) continue;
       const seen = existingFronts(deckId);
       [...list].reverse().forEach((c, revIdx) => {
@@ -2821,53 +2848,93 @@ const globeKind = (c) => {
   if (c.front.startsWith('Capital of ')) return 'capital';
   if (c.front.startsWith("Which country's capital is ")) return 'capital';
   if (/Which (country|territory) is this\?$/.test(c.front)) return 'flag';
+  if (/^(Who leads|Head of government of)/.test(c.front)) return 'leader';
   return null;
 };
+/* One country at a time, and everything about it before moving on: where it
+   is, its capital, its flag, who runs it. Four passes at the same place beats
+   four unrelated places. */
+const GLOBE_ORDER = ['where', 'capital', 'flag', 'leader'];
 
-function globeCards(n) {
-  if (!state.decks.find((d) => d.id === WORLD_DECK)) return [];
+const PACES = {
+  calm:   { label: 'Calm',   fly: 2300, hold: 1900, miss: 2900, spin: 0.012 },
+  normal: { label: 'Steady', fly: 1400, hold: 1100, miss: 1900, spin: 0.022 },
+  brisk:  { label: 'Brisk',  fly: 800,  hold: 650,  miss: 1200, spin: 0.04 },
+  manual: { label: 'Manual', fly: 1100, hold: null, miss: null, spin: 0 },
+};
+const pace = () => PACES[state.settings.globePace] || PACES.normal;
+
+function globeRound() {
+  const world = state.decks.find((d) => d.id === WORLD_DECK);
+  if (!world) return [];
   const today = dayKey();
-  const pool = deckCards(WORLD_DECK).filter((c) =>
-    !c.mastered && c.group && CENTRE[c.group] && META[c.group] && globeKind(c));
-  const due = shuffle(pool.filter((c) => isReview(c, today)));
-  /* reviews first, but never the whole night — same rule the decks follow */
-  const fresh = intake(pool.filter(isNew), { ordered: false });
-  const keepForNew = Math.min(fresh.length, Math.max(1, Math.floor(n / 3)));
-  const picked = due.length > n
-    ? [...due.slice(0, n - keepForNew), ...fresh.slice(0, keepForNew)]
-    : [...due, ...fresh].slice(0, n);
-  /* never ask about the same country twice in one round */
-  const seen = new Set();
-  return picked.filter((c) => (seen.has(c.group) ? false : seen.add(c.group)));
+  const dose = sessionSize(world);
+  const wanted = Math.max(1, Math.round(dose / GLOBE_ORDER.length));
+
+  /* gather every card the globe can ask, grouped by country */
+  const byCode = {};
+  for (const c of deckCards(WORLD_DECK)) {
+    const kind = globeKind(c);
+    if (!kind || c.mastered || !c.group || !CENTRE[c.group] || !META[c.group]) continue;
+    const slot = (byCode[c.group] = byCode[c.group] || {});
+    if (!slot[kind]) slot[kind] = c;
+  }
+  const codes = Object.keys(byCode);
+  const owed = (code) => Object.values(byCode[code]).filter((c) => isReview(c, today)).length;
+  const due = shuffle(codes.filter((k) => owed(k) > 0)).sort((a, b) => owed(b) - owed(a));
+  const fresh = shuffle(codes.filter((k) => owed(k) === 0));
+  const keepForNew = Math.min(fresh.length, Math.max(1, Math.floor(wanted / 3)));
+  const picked = due.length >= wanted
+    ? [...due.slice(0, wanted - keepForNew), ...fresh.slice(0, keepForNew)]
+    : [...due, ...fresh].slice(0, wanted);
+
+  const queue = [];
+  for (const code of picked) {
+    for (const kind of GLOBE_ORDER) {
+      const card = byCode[code][kind];
+      if (card) queue.push({ code, card, kind });
+    }
+  }
+  return queue;
 }
 
 /* the flag, from the ISO code — the same derivation the cards use */
 const flagFor = (code) => String.fromCodePoint(...[...code].map((ch) => 0x1f1e6 + ch.charCodeAt(0) - 65));
 
-function globeQuestion(card, code) {
-  const kind = globeKind(card);
-  const m = META[code];
-  if (kind === 'capital') {
-    return {
-      prompt: 'What is its capital?',
-      right: capitalLabel(card.front.startsWith('Capital of ')
-        ? card.back
-        : card.front.replace(/^Which country's capital is /, '').replace(/\?$/, '')),
-      pool: 'capital',
-    };
-  }
-  if (kind === 'flag') return { prompt: 'Which flag is its own?', right: flagFor(code), pool: 'flag' };
-  return { prompt: 'Which one is starred?', right: m.n, pool: 'name' };
+/* One clean city name. The cards spell out every seat — "Mbabane
+   (administrative) · Lobamba (legislative)" — and an option in that shape
+   announces itself as the odd one out before you have read it. */
+const capitalLabel = (text) => String(text || '').split(' · ')[0].replace(/\s*\([^)]*\)/g, '').trim();
+/* the person, not the office: "President – Lula" reduces to "Lula" */
+const leaderLabel = (text) => String(text || '').split(/\s[–—]\s/).pop().trim();
+
+function cardFor(code, kind) {
+  const want = { capital: `Capital of ${META[code].n}?`, leader: null };
+  const pool = deckCards(WORLD_DECK);
+  if (kind === 'capital') return pool.find((c) => c.front === want.capital);
+  if (kind === 'leader') return pool.find((c) => c.group === code && globeKind(c) === 'leader');
+  return null;
+}
+const capitalOf = (code) => { const c = cardFor(code, 'capital'); return c ? capitalLabel(c.back) : null; };
+const leaderOf  = (code) => { const c = cardFor(code, 'leader');  return c ? leaderLabel(c.back)  : null; };
+
+function globeQuestion(step) {
+  const { card, code, kind } = step;
+  if (kind === 'capital') return { prompt: 'What is its capital?', right: capitalLabel(card.back), pool: 'capital' };
+  if (kind === 'flag')    return { prompt: 'Which flag is its own?', right: flagFor(code), pool: 'flag' };
+  if (kind === 'leader')  return { prompt: 'Who leads it?', right: leaderLabel(card.back), pool: 'leader' };
+  return { prompt: 'Which one is starred?', right: META[code].n, pool: 'name' };
 }
 function startGlobe() {
   console.log('[globe] startGlobe');
-  const picked = globeCards(10);
+  const picked = globeRound();
   if (!picked.length) { toast('Nothing waiting on the globe tonight.', 'bad'); return; }
   /* Each round carries a token. Timers scheduled by the last round keep
      running after you leave, and without this they advance the next one —
      a question silently skipped. */
-  gsession = { queue: picked, i: 0, right: 0, answered: false, token: Symbol('round') };
+  gsession = { queue: picked, i: 0, right: 0, answered: false, at: null, token: Symbol('round') };
   go('globe');
+  $('#globePace').textContent = pace().label;
   /* setTimeout, not requestAnimationFrame: frames do not fire while the tab is
      unpainted, and setup must not depend on being watched. */
   setTimeout(() => {
@@ -2896,6 +2963,7 @@ function startGlobe() {
       });
       addEventListener('pointerup', () => { if (globe) globe.dragging = null; });
     }
+    globe.spin = pace().spin;
     globe.resize();
     globe.draw();          // one frame immediately, so it is never blank
     globe.start();
@@ -2906,32 +2974,38 @@ function startGlobe() {
 async function nextGlobe() {
   if (!gsession) return;
   const token = gsession.token;
-  const card = gsession.queue[gsession.i];
+  const step = gsession.queue[gsession.i];
   $('#globeDone').hidden = true;
   $('#globeOptions').hidden = false;
   document.querySelector('.globe-name')?.remove();
-  if (!card) return finishGlobe();
+  if (!step) return finishGlobe();
 
-  const code = card.group;
+  const { code } = step;
+  const arriving = code !== gsession.at;      // same country: no need to fly again
   gsession.answered = false;
-  globe.marked = null; globe.revealed = false; globe.dim = false;
+  globe.revealed = false;
   $('#globeCount').textContent = `${gsession.i + 1} / ${gsession.queue.length}`;
   $('#globeFill').style.width = `${(gsession.i / gsession.queue.length) * 100}%`;
   $('#globeScore').textContent = gsession.right;
-  $('#globeRegion').textContent = META[code] ? META[code].r : '';
+  $('#globeRegion').textContent = META[code].r;
 
-  /* fly first, then mark — arriving on a star that was already there is flat */
-  $('#globeVeil').classList.remove('on');
-  await globe.flyTo(code, { ms: 1400 });
-  if (!gsession || gsession.token !== token || gsession.queue[gsession.i] !== card) return;
+  if (arriving) {
+    globe.marked = null;
+    globe.dim = false;
+    $('#globeVeil').classList.remove('on');
+    await globe.flyTo(code, { ms: pace().fly });
+    if (!gsession || gsession.token !== token || gsession.queue[gsession.i] !== step) return;
+    gsession.at = code;
+  }
   globe.marked = code;
   globe.dim = true;
   $('#globeVeil').classList.add('on');
-  renderGlobeOptions(card, code);
+  renderGlobeOptions(step);
 }
 
-function renderGlobeOptions(card, code) {
-  const { prompt, right, pool } = globeQuestion(card, code);
+function renderGlobeOptions(step) {
+  const { code } = step;
+  const { prompt, right, pool } = globeQuestion(step);
   $('#globeQ').textContent = prompt;
   const region = META[code].r;
   /* wrong answers from the same region, because "is it Togo or Benin" is the
@@ -2939,7 +3013,8 @@ function renderGlobeOptions(card, code) {
   const others = Object.keys(META).filter((k) => k !== code && CENTRE[k]);
   const near = shuffle(others.filter((k) => META[k].r === region));
   const far = shuffle(others.filter((k) => META[k].r !== region));
-  const label = (k) => (pool === 'flag' ? flagFor(k) : pool === 'capital' ? capitalOf(k) : META[k].n);
+  const label = (k) => (pool === 'flag' ? flagFor(k) : pool === 'capital' ? capitalOf(k)
+    : pool === 'leader' ? leaderOf(k) : META[k].n);
   const wrong = [];
   for (const k of [...near, ...far]) {
     const v = label(k);
@@ -2952,23 +3027,13 @@ function renderGlobeOptions(card, code) {
   $('#globeOptions').innerHTML = options
     .map((n) => `<button class="globe-opt" data-name="${esc(n)}">${esc(n)}</button>`).join('');
   $$('#globeOptions .globe-opt').forEach((b) =>
-    b.addEventListener('click', () => answerGlobe(card, code, b.dataset.name === right, b, right)));
+    b.addEventListener('click', () => answerGlobe(step, b.dataset.name === right, b, right)));
 }
 
-/* One clean city name. The cards spell out every seat — "Mbabane
-   (administrative) · Lobamba (legislative)" — and an option in that shape
-   announces itself as the odd one out before you have read it. */
-const capitalLabel = (text) => String(text || '').split(' · ')[0].replace(/\s*\([^)]*\)/g, '').trim();
-function capitalOf(code) {
-  const name = META[code] && META[code].n;
-  if (!name) return null;
-  const c = deckCards(WORLD_DECK).find((x) => x.front === `Capital of ${name}?`);
-  return c ? capitalLabel(c.back) : null;
-}
-
-function answerGlobe(card, code, correct, btn, right) {
+function answerGlobe(step, correct, btn, right) {
   if (!gsession || gsession.answered) return;
   gsession.answered = true;
+  const { code, card } = step;
   globe.revealed = true;
   globe.dim = false;
 
@@ -2981,19 +3046,37 @@ function answerGlobe(card, code, correct, btn, right) {
   /* always name the country, whatever was being asked, so the place and the
      fact land together */
   const label = META[code].n + (right === META[code].n ? '' : ' — ' + right);
-  $('.globe-stage').insertAdjacentHTML('beforeend',
-    `<div class="globe-name">${esc(label)}</div>`);
+  $('.globe-stage').insertAdjacentHTML('beforeend', `<div class="globe-name">${esc(label)}</div>`);
 
   grade(card, correct);
-  bumpDaily(WORLD_DECK);
+  bumpDaily(card.deckId);
   if (correct) { gsession.right++; buzz(12); } else buzz(24);
   $('#globeScore').textContent = gsession.right;
+
+  const p = pace();
+  const wait = correct ? p.hold : p.miss;
+  if (wait === null) { showAdvanceHint(); return; }   // manual: wait for a nudge
   const token = gsession.token;
-  setTimeout(() => {
-    if (!gsession || gsession.token !== token) return;   // a different round now
-    gsession.i++;
-    nextGlobe();
-  }, correct ? 1100 : 1900);
+  gsession.timer = setTimeout(() => {
+    if (!gsession || gsession.token !== token) return;
+    advanceGlobe();
+  }, wait);
+}
+
+/* space, enter, or a tap on the planet moves it along — and cuts short a
+   pause you have already finished reading */
+function advanceGlobe() {
+  if (!gsession) return;
+  clearTimeout(gsession.timer);
+  document.querySelector('.globe-advance')?.remove();
+  if (!gsession.answered) return;
+  gsession.i++;
+  nextGlobe();
+}
+function showAdvanceHint() {
+  document.querySelector('.globe-advance')?.remove();
+  $('.globe-ask').insertAdjacentHTML('beforeend',
+    '<p class="globe-advance">space for the next one</p>');
 }
 
 function finishGlobe() {
@@ -3001,6 +3084,7 @@ function finishGlobe() {
   const pct = Math.round((gsession.right / total) * 100);
   $('#globeOptions').hidden = true;
   $('#globeVeil').classList.remove('on');
+  gsession.at = null;
   globe.marked = null; globe.dim = false; globe.revealed = false;
   globe.animate({ lon: globe.lon, lat: globe.lat, zoom: globe.zoom },
                 { lon: globe.lon, lat: -12, zoom: 1 }, 900);
@@ -3025,6 +3109,29 @@ function exitGlobe() {
 function setupGlobe() {
   on('#globeLaunch', 'click', startGlobe);
   on('#globeExit', 'click', exitGlobe);
+  on('#globePace', 'click', () => {
+    const order = ['calm', 'normal', 'brisk', 'manual'];
+    const next = order[(order.indexOf(state.settings.globePace || 'normal') + 1) % order.length];
+    state.settings.globePace = next;
+    save();
+    $('#globePace').textContent = PACES[next].label;
+    if (globe) globe.spin = PACES[next].spin;
+    toast(next === 'manual' ? 'Manual — space moves it on.' : `${PACES[next].label} pace.`);
+  });
+  /* space and enter move it along, wherever the focus happens to be */
+  document.addEventListener('keydown', (e) => {
+    if (current !== 'globe' || !gsession) return;
+    const tag = document.activeElement.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+    if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); advanceGlobe(); }
+    if (e.key === 'Escape') { e.preventDefault(); exitGlobe(); }
+    /* 1-4 pick an answer without reaching for the mouse */
+    const n = Number(e.key);
+    if (n >= 1 && n <= 4) {
+      const b = document.querySelectorAll('.globe-opt')[n - 1];
+      if (b && !b.disabled) { e.preventDefault(); b.click(); }
+    }
+  });
   on('#globeBack', 'click', exitGlobe);
   on('#globeAgain', 'click', () => startGlobe());
 }

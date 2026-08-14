@@ -95,9 +95,37 @@ export class Globe {
   /* Fly to a country: turn the planet under a fixed camera, easing all the
      way, and dip the zoom in the middle so it reads as pulling back and
      coming in again rather than sliding. */
-  flyTo(code, { ms = 1500, zoom = 1.06 } = {}) {
+  /* How wide a country is, in degrees, allowing for meridians crowding near
+     the poles. Used to decide how close the camera needs to get. */
+  static span(code) {
+    const rings = SHAPES[code];
+    const c = CENTRE[code];
+    if (!rings || !c) return 1.2;                 // no outline: it is tiny
+    /* the main landmass only. France carries Réunion and French Guiana, the
+       United States carries Alaska and Hawaii — measuring all of it would put
+       the camera in orbit for a country you could otherwise read. */
+    const ring = rings.reduce((a, b) => (b.length > a.length ? b : a));
+    let minX = 1e9, maxX = -1e9, minY = 1e9, maxY = -1e9;
+    for (let i = 0; i < ring.length; i += 2) {
+      minX = Math.min(minX, ring[i]); maxX = Math.max(maxX, ring[i]);
+      minY = Math.min(minY, ring[i+1]); maxY = Math.max(maxY, ring[i+1]);
+    }
+    if (minX > maxX) return 1.2;
+    return Math.max((maxX - minX) * Math.cos(c[1] * RAD), maxY - minY, 0.4);
+  }
+
+  /* Close enough to tell Belgium from the Netherlands, far enough that its
+     neighbours are still on screen — the neighbours are what make it a
+     question rather than a shape. Luxembourg and Russia cannot share a camera
+     height, and the ceiling keeps the planet reading as a planet. */
+  static zoomFor(code) {
+    return clamp(20 / Globe.span(code), 1.05, 3.6);
+  }
+
+  flyTo(code, { ms = 1500, zoom = null } = {}) {
     const target = CENTRE[code];
     if (!target) return Promise.resolve();
+    if (zoom === null) zoom = Globe.zoomFor(code);
     if (this.calm) ms = 260;
     const [tLon, tLat] = target;
     const from = { lon: this.lon, lat: this.lat, zoom: this.zoom };
@@ -132,7 +160,8 @@ export class Globe {
         this.lon = from.lon + (to.lon - from.lon) * e;
         this.lat = from.lat + (to.lat - from.lat) * e;
         /* dip out and back in — the cinematic bit */
-        const dip = this.calm ? 0 : Math.sin(t * Math.PI) * 0.1;
+        const dip = this.calm ? 0
+          : Math.sin(t * Math.PI) * (0.08 + Math.abs(to.zoom - from.zoom) * 0.16);
         this.zoom = (from.zoom + (to.zoom - from.zoom) * e) - dip;
         if (t < 1) requestAnimationFrame(step);
         else finish();
