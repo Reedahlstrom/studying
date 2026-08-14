@@ -2819,7 +2819,10 @@ function startGlobe() {
   console.log('[globe] startGlobe');
   const picked = globeCountries(10);
   if (!picked.length) { toast('Nothing waiting on the globe tonight.', 'bad'); return; }
-  gsession = { queue: picked, i: 0, right: 0, answered: false };
+  /* Each round carries a token. Timers scheduled by the last round keep
+     running after you leave, and without this they advance the next one —
+     a question silently skipped. */
+  gsession = { queue: picked, i: 0, right: 0, answered: false, token: Symbol('round') };
   go('globe');
   /* setTimeout, not requestAnimationFrame: frames do not fire while the tab is
      unpainted, and setup must not depend on being watched. */
@@ -2858,6 +2861,7 @@ function startGlobe() {
 
 async function nextGlobe() {
   if (!gsession) return;
+  const token = gsession.token;
   const card = gsession.queue[gsession.i];
   $('#globeDone').hidden = true;
   $('#globeOptions').hidden = false;
@@ -2876,7 +2880,7 @@ async function nextGlobe() {
   /* fly first, then mark — arriving on a star that was already there is flat */
   $('#globeVeil').classList.remove('on');
   await globe.flyTo(code, { ms: 1400 });
-  if (!gsession || gsession.queue[gsession.i] !== card) return;   // left mid-flight
+  if (!gsession || gsession.token !== token || gsession.queue[gsession.i] !== card) return;
   globe.marked = code;
   globe.dim = true;
   $('#globeVeil').classList.add('on');
@@ -2918,7 +2922,12 @@ function answerGlobe(card, code, correct, btn) {
   bumpDaily(WORLD_DECK);
   if (correct) { gsession.right++; buzz(12); } else buzz(24);
   $('#globeScore').textContent = gsession.right;
-  setTimeout(() => { if (gsession) { gsession.i++; nextGlobe(); } }, correct ? 1100 : 1900);
+  const token = gsession.token;
+  setTimeout(() => {
+    if (!gsession || gsession.token !== token) return;   // a different round now
+    gsession.i++;
+    nextGlobe();
+  }, correct ? 1100 : 1900);
 }
 
 function finishGlobe() {

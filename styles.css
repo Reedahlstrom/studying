@@ -1106,6 +1106,12 @@ select { padding-right: 38px; cursor: pointer; }
   --globe-grid: rgba(255,255,255,.32); --globe-rim: rgba(40,70,90,.4);
   --globe-halo: rgba(130,190,225,.5); --globe-mark: #d24a2c; --globe-hover: #96b76d;
   --globe-star: ;
+}
+/* Only when it is the active view. An ID selector outranks `.view { display:
+   none }`, so declaring display here put a fixed, full-screen globe on top of
+   every page in the app. Same trap as the [hidden] rule: specificity, not
+   order. */
+#view-globe.on {
   position: fixed; inset: 0; z-index: 60;
   display: grid; grid-template-rows: auto 1fr auto;
   background: radial-gradient(120% 80% at 50% 0%, var(--bg-elev) 0%, var(--bg) 70%);
@@ -1116,6 +1122,8 @@ select { padding-right: 38px; cursor: pointer; }
   --globe-land: #7ba35c; --globe-land-dim: #4e6242; --globe-edge: rgba(0,0,0,.5);
   --globe-grid: rgba(255,255,255,.13); --globe-rim: rgba(140,190,255,.28);
   --globe-halo: rgba(90,150,200,.34); --globe-star: rgba(255,255,255,.9);
+}
+[data-theme="dark"] #view-globe.on {
   background: radial-gradient(120% 80% at 50% 0%, #101c22 0%, #060b0e 75%);
 }
 .globe-bar {
