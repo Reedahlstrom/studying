@@ -1242,3 +1242,31 @@ select { padding-right: 38px; cursor: pointer; }
 #view-globe { --globe-marked-fill: #9fbe78; }
 [data-theme="dark"] #view-globe { --globe-marked-fill: #93c46e; }
 .quick-row.three { grid-template-columns: repeat(3, 1fr); }
+
+/* choosing a species when you plant a goal */
+.tree-picker { display: grid; grid-template-columns: repeat(3, 1fr); gap: 9px; }
+.tree-pick {
+  display: grid; justify-items: center; gap: 2px; padding: 10px 6px 8px;
+  border-radius: 14px; background: var(--bg-elev-2);
+  border: 1.5px solid transparent; transition: border-color .2s, background .2s, transform .2s var(--spring);
+}
+.tree-pick:hover { transform: translateY(-2px); }
+.tree-pick.on { border-color: var(--olive); background: color-mix(in srgb, var(--olive) 12%, var(--bg-elev-2)); }
+.tree-pick-art { width: 52px; height: 60px; }
+.tree-pick-art svg { width: 100%; height: 100%; }
+/* the preview should stand still — the grove is where they grow */
+.tree-pick-art .tree-trunk, .tree-pick-art .tree-branch,
+.tree-pick-art .tree-leaf, .tree-pick-art .tree-leaf-sm,
+.tree-pick-art .tree-frond, .tree-pick-art .ground {
+  animation: none !important; stroke-dashoffset: 0 !important; opacity: 1 !important; transform: none !important;
+}
+.tree-pick-name { font-size: 11.5px; font-weight: 600; color: var(--text-dim); }
+.tree-pick.on .tree-pick-name { color: var(--olive-deep); }
+[data-theme="dark"] .tree-pick.on .tree-pick-name { color: var(--olive); }
+
+/* palm fronds share the leaf colouring, including going grey when neglected */
+.goal-tree .tree-frond {
+  fill: color-mix(in srgb, var(--olive) calc(var(--health) * 100%), #b6b6ae);
+  opacity: 0; transform-origin: 62px 60px;
+  animation: unfurl .6s var(--spring) forwards;
+}

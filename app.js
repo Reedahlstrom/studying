@@ -601,7 +601,7 @@ function patchGrove(goals, habits, log, today) {
   goals.forEach((g) => {
     const card = $(`#grove [data-tree="${g.id}"]`); if (!card) return;
     const seeds = habits.filter((h) => h.goalId === g.id);
-    const t = treeState(g);
+    const t = { ...treeState(g), kind: g.tree || 'oak' };
     card.classList.toggle('tended', !!(seeds.length && seeds.every((h) => didOn(log, h.id, today))));
     card.classList.toggle('fading', t.health < 0.5);
     const holder = card.querySelector('.goal-tree');
@@ -682,7 +682,7 @@ function renderToday() {
 
   const cards = goals.map((g) => {
     const seeds = habits.filter((h) => h.goalId === g.id);
-    const t = treeState(g);
+    const t = { ...treeState(g), kind: g.tree || 'oak' };
     const allDone = seeds.length && seeds.every((h) => didOn(log, h.id, today));
     return `<article class="tree-card ${allDone ? 'tended' : ''} ${t.health < 0.5 ? 'fading' : ''}" data-tree="${g.id}">
       <div class="tree-top" data-goal="${g.id}">
@@ -792,11 +792,48 @@ function treeState(goal) {
 const CANOPY = [[0, -8, 21], [-19, 3, 16], [19, 3, 16], [-11, -21, 14],
                 [12, -21, 14], [0, 16, 15], [-27, -8, 12], [27, -8, 12]];
 
-function treeSVG({ stage, health }) {
-  const trunkTop = 128 - (32 + stage * 9);
-  const blobs = stage === 0 ? 0 : Math.min(CANOPY.length, stage + 1);
-  const parts = [];
+/* Three species, because a grove of identical trees is a chart. Each grows the
+   same way — taller trunk, fuller crown, greyer when neglected — but reads as
+   its own thing at a glance, which is what makes a goal recognisable. */
+const TREE_KINDS = [
+  { id: 'oak',  name: 'Broadleaf', hint: 'Slow, broad, stubborn' },
+  { id: 'pine', name: 'Pine',      hint: 'Upright and evergreen' },
+  { id: 'palm', name: 'Palm',      hint: 'Leans into the weather' },
+];
 
+function treeSVG({ stage, health, kind = 'oak' }) {
+  const trunkTop = 128 - (32 + stage * 9);
+  const parts = [];
+  const leaf = (d, delay) => `<path class="tree-leaf-sm" style="animation-delay:${delay}ms" d="${d}"/>`;
+
+  if (kind === 'pine') {
+    /* stacked skirts, widest at the bottom, one more tier per stage */
+    const tiers = Math.max(1, Math.min(5, stage + 1));
+    for (let i = 0; i < tiers; i++) {
+      const y = trunkTop + 6 + i * ((128 - trunkTop) / (tiers + 1.1));
+      const w = 15 + i * 8.5;
+      parts.push(`<path class="tree-leaf" style="animation-delay:${560 + i * 90}ms"
+        d="M60,${y - 22} L${60 + w},${y + 8} L${60 + w * 0.55},${y + 8} L60,${y - 4} L${60 - w * 0.55},${y + 8} L${60 - w},${y + 8} Z"/>`);
+    }
+    return svgWrap(health, `<path class="tree-trunk" d="M60,132 V${trunkTop + 4}"/>${parts.join('')}`);
+  }
+
+  if (kind === 'palm') {
+    /* a leaning trunk and a crown of fronds, more of them as it grows */
+    const fronds = Math.max(2, Math.min(7, stage + 2));
+    for (let i = 0; i < fronds; i++) {
+      const a = (-Math.PI * 0.92) + (i / (fronds - 1)) * Math.PI * 0.84;
+      const len = 30 + (stage * 1.6);
+      const ex = 64 + Math.cos(a) * len, ey = trunkTop + Math.sin(a) * len * 0.62;
+      const cx = 64 + Math.cos(a) * len * 0.5, cy = trunkTop + Math.sin(a) * len * 0.9 - 8;
+      parts.push(`<path class="tree-frond" style="animation-delay:${560 + i * 70}ms"
+        d="M64,${trunkTop} Q${cx},${cy} ${ex},${ey} Q${cx},${cy + 7} 64,${trunkTop} Z"/>`);
+    }
+    return svgWrap(health, `<path class="tree-trunk" d="M56,132 C58,110 60,${trunkTop + 22} 64,${trunkTop}"/>${parts.join('')}`);
+  }
+
+  /* the broadleaf: the original */
+  const blobs = stage === 0 ? 0 : Math.min(CANOPY.length, stage + 1);
   if (stage >= 2) {
     parts.push(`<path class="tree-branch" style="animation-delay:520ms" d="M60,${trunkTop + 34} C50,${trunkTop + 28} 42,${trunkTop + 22} 38,${trunkTop + 14}"/>`);
     parts.push(`<path class="tree-branch" style="animation-delay:600ms" d="M60,${trunkTop + 42} C70,${trunkTop + 36} 78,${trunkTop + 30} 82,${trunkTop + 22}"/>`);
@@ -806,13 +843,16 @@ function treeSVG({ stage, health }) {
     parts.push(`<circle class="tree-leaf" style="animation-delay:${640 + i * 80}ms" cx="${60 + dx}" cy="${trunkTop + dy}" r="${r}"/>`);
   }
   if (stage === 0) {   /* just planted */
-    parts.push(`<path class="tree-leaf-sm" style="animation-delay:520ms" d="M60,${trunkTop} C48,${trunkTop - 7} 42,${trunkTop - 1} 42,${trunkTop + 7} C51,${trunkTop + 8} 57,${trunkTop + 4} 60,${trunkTop}"/>`);
-    parts.push(`<path class="tree-leaf-sm" style="animation-delay:600ms" d="M60,${trunkTop} C72,${trunkTop - 7} 78,${trunkTop - 1} 78,${trunkTop + 7} C69,${trunkTop + 8} 63,${trunkTop + 4} 60,${trunkTop}"/>`);
+    parts.push(leaf(`M60,${trunkTop} C48,${trunkTop - 7} 42,${trunkTop - 1} 42,${trunkTop + 7} C51,${trunkTop + 8} 57,${trunkTop + 4} 60,${trunkTop}`, 520));
+    parts.push(leaf(`M60,${trunkTop} C72,${trunkTop - 7} 78,${trunkTop - 1} 78,${trunkTop + 7} C69,${trunkTop + 8} 63,${trunkTop + 4} 60,${trunkTop}`, 600));
   }
+  return svgWrap(health, `<path class="tree-trunk" d="M60,132 C60,112 58,${trunkTop + 26} 60,${trunkTop}"/>${parts.join('')}`);
+}
+
+function svgWrap(health, inner) {
   return `<svg viewBox="0 0 120 140" style="--health:${health}" aria-hidden="true">
     <path class="ground" d="M22,132 H98"/>
-    <path class="tree-trunk" d="M60,132 C60,112 58,${trunkTop + 26} 60,${trunkTop}"/>
-    ${parts.join('')}
+    ${inner}
   </svg>`;
 }
 
@@ -2344,6 +2384,17 @@ function openHabitSheet(id = null) {
 const closeHabitSheet = () => { $('#habitScrim').hidden = true; editingHabit = null; };
 
 let editingGoal = null;
+function renderTreePicker(current) {
+  $('#gTree').innerHTML = TREE_KINDS.map((k) => `
+    <button type="button" class="tree-pick ${k.id === current ? 'on' : ''}" data-tree="${k.id}" title="${esc(k.hint)}">
+      <span class="tree-pick-art">${treeSVG({ stage: 4, health: 1, kind: k.id })}</span>
+      <span class="tree-pick-name">${esc(k.name)}</span>
+    </button>`).join('');
+  $$('#gTree .tree-pick').forEach((b) => b.addEventListener('click', () => {
+    $$('#gTree .tree-pick').forEach((x) => x.classList.toggle('on', x === b));
+  }));
+}
+
 function openGoalSheet(id = null) {
   editingGoal = id;
   const g = id ? (state.goals || []).find((x) => x.id === id) : null;
@@ -2351,6 +2402,7 @@ function openGoalSheet(id = null) {
   $('#gName').value = g ? g.name : '';
   $('#gWhy').value = g ? (g.why || '') : '';
   $('#gDate').value = g ? (g.targetDate || '') : '';
+  renderTreePicker(g ? (g.tree || 'oak') : 'oak');
   $('#gDelete').hidden = !g;
   $('#goalScrim').hidden = false;
   setTimeout(() => $('#gName').focus(), 200);
@@ -2412,7 +2464,10 @@ function setupPlanner() {
   $('#gSave').addEventListener('click', () => {
     const name = $('#gName').value.trim();
     if (!name) return toast('Give the goal a name.', 'bad');
-    const fields = { name, why: $('#gWhy').value.trim(), targetDate: $('#gDate').value || null };
+    const fields = {
+      name, why: $('#gWhy').value.trim(), targetDate: $('#gDate').value || null,
+      tree: ($('#gTree .tree-pick.on') || {}).dataset?.tree || 'oak',
+    };
     state.goals = state.goals || [];
     if (editingGoal) Object.assign(state.goals.find((g) => g.id === editingGoal), fields);
     else state.goals.push({ id: 'g-' + uid().slice(0, 8), created: new Date().toISOString(), ...fields });
