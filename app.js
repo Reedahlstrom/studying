@@ -124,6 +124,66 @@ function publishStatus() {
 
 let state = load();
 
+/* Another tab wrote. Taking its copy wholesale destroys whatever you have just
+   done in this one — grade a card, and an older tab's save would replace the
+   card with its own version before yours reached storage. Progress is merged
+   instead, per card, keeping whichever side actually did more work. */
+function mergeStates(mine, theirs) {
+  const out = (theirs.rev || 0) > (mine.rev || 0) ? { ...theirs } : { ...mine };
+
+  /* cards: whichever copy was reviewed later, or has seen more, wins */
+  const byId = new Map(theirs.cards.map((c) => [c.id, c]));
+  const rank = (c) => [c.lastReviewed || '', c.seen || 0, c.box || 0];
+  const better = (a, b) => {
+    const ra = rank(a), rb = rank(b);
+    for (let i = 0; i < ra.length; i++) if (ra[i] !== rb[i]) return ra[i] > rb[i] ? a : b;
+    return a;
+  };
+  const merged = mine.cards.map((c) => {
+    const t = byId.get(c.id);
+    byId.delete(c.id);
+    return t ? better(c, t) : c;
+  });
+  for (const left of byId.values()) merged.push(left);   // cards only the other side has
+  out.cards = merged;
+
+  /* a tick is a tick: union the day logs */
+  out.log = { ...(theirs.log || {}) };
+  for (const [habit, days] of Object.entries(mine.log || {})) {
+    out.log[habit] = { ...(out.log[habit] || {}), ...days };
+  }
+
+  /* today's tallies: take the larger count per deck for the same day */
+  const md = mine.daily || {}, td = theirs.daily || {};
+  if (md.day && md.day === td.day) {
+    const decks = { ...(td.decks || {}) };
+    for (const [k, v] of Object.entries(md.decks || {})) decks[k] = Math.max(v, decks[k] || 0);
+    out.daily = { day: md.day, count: Math.max(md.count || 0, td.count || 0), decks };
+  } else out.daily = (md.day || '') > (td.day || '') ? md : td;
+
+  out.rev = Math.max(mine.rev || 0, theirs.rev || 0);
+  return out;
+}
+
+let pendingMerge = null;
+function adoptExternalWrite(raw) {
+  try {
+    const incoming = JSON.parse(raw);
+    if (!incoming || !Array.isArray(incoming.cards)) return;
+    if ((incoming.rev || 0) === (state.rev || 0)) return;      // our own write coming back
+    /* Never swap the state out from under a running session. Merging rebuilds
+       every card object, and the session is holding references to the old
+       ones — grade one after that and the change lands on an orphan that
+       nothing will ever save. It waits until the session is over. */
+    if (session || gsession) { pendingMerge = raw; return; }
+    state = hydrate(mergeStates(state, incoming));
+    groveSig = null;
+    if (current === 'today') renderToday();
+    else if (current === 'decks') renderDecks();
+    else if (current === 'deck') renderDeck();
+  } catch (_) { /* a half-written value: the next write will settle it */ }
+}
+
 function load() {
   try {
     const raw = localStorage.getItem(STORE_KEY);
@@ -191,6 +251,12 @@ let saveTimer = null;
 function writeNow() {
   clearTimeout(saveTimer);
   saveTimer = null;
+  /* Stamp every write. A second tab of this app, opened hours ago, holds an
+     old copy of everything in memory — and the moment it renders anything it
+     saves, writing its stale copy over a morning's work. The stamp lets a tab
+     notice it has been overtaken. */
+  state.rev = (state.rev || 0) + 1;
+  state.savedAt = new Date().toISOString();
   try { localStorage.setItem(STORE_KEY, JSON.stringify(state)); publishStatus(); }
   catch (e) { toast('Could not save — storage is full.', 'bad'); }
 }
@@ -287,7 +353,10 @@ function grade(card, correct) {
     card.box = 1;
     card.lapses = (card.lapses || 0) + 1;   // how many times it has knocked you back
   }
-  save();
+  /* Straight to disk. An answer is the one thing in this app that must never
+     be lost, and a debounce is a window in which it can be — by a reload, a
+     closed tab, or another tab saving over it. */
+  writeNow();
 }
 
 /* ───────────────────────── helpers ───────────────────────── */
@@ -438,7 +507,7 @@ function advanceChunk(card, ok) {
       card.stage = 2;                           // back to the first-letter rung
     }
   }
-  save();
+  writeNow();
 }
 
 function toast(msg, kind = '') {
@@ -1617,7 +1686,7 @@ function bumpDaily(deckId = state.activeDeck) {
   base.count += 1;
   if (deckId) base.decks[deckId] = (base.decks[deckId] || 0) + 1;
   state.daily = base;
-  save();
+  writeNow();
 }
 
 /* First tap reveals; every tap after that flips between question and answer.
@@ -1673,6 +1742,14 @@ function answer(correct) {
   }, 320);
 }
 
+/* Anything another tab sent while you were mid-session is folded in now. */
+function applyPendingMerge() {
+  if (!pendingMerge || session || gsession) return;
+  const raw = pendingMerge;
+  pendingMerge = null;
+  adoptExternalWrite(raw);
+}
+
 function finishSession() {
   const answered = session.right + session.wrong;
   $('#stage').hidden = true;
@@ -1710,7 +1787,8 @@ function finishSession() {
   again.textContent = owed ? 'Clear the rest' : 'Study ahead';
   again.classList.toggle('quiet', owed === 0);
   session = null;
-  save();
+  writeNow();
+  applyPendingMerge();
 }
 
 /* ───────────────────────── adding cards ───────────────────────── */
@@ -2825,7 +2903,7 @@ function boot() {
   $('#missBtn').addEventListener('click', () => answer(false));
   /* go back where you came from, not always to the deck page */
   $('#backCard').addEventListener('click', stepBack);
-  $('#endSession').addEventListener('click', () => go(cameFrom));
+  $('#endSession').addEventListener('click', () => { go(cameFrom); applyPendingMerge(); });
   $('#doneHome').addEventListener('click', () => go(cameFrom));
   /* session is cleared by the time this fires, so the old `session.filter`
      read was always null — and without studyAhead the call quietly did
@@ -2872,6 +2950,17 @@ function boot() {
     if (current === 'decks') renderDecks();
   });
   addEventListener('pagehide', flushSave);
+  /* Fires in every *other* tab when one of them saves. */
+  addEventListener('storage', (e) => {
+    if (e.key === STORE_KEY && e.newValue) adoptExternalWrite(e.newValue);
+  });
+  /* Coming back to a tab that has been sitting: check whether another tab has
+     moved on before this one renders and saves anything. */
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) return;
+    const raw = localStorage.getItem(STORE_KEY);
+    if (raw) adoptExternalWrite(raw);
+  });
 
   const hash = location.hash.slice(1);
   go(['today', 'decks', 'more'].includes(hash) ? hash : 'today');
@@ -3178,6 +3267,7 @@ function finishGlobe() {
 
 function exitGlobe() {
   gsession = null;
+  applyPendingMerge();
   if (globe) globe.stop();
   go('deck');
 }
