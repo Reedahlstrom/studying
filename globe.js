@@ -31,6 +31,7 @@ export class Globe {
     this.calm = matchMedia('(prefers-reduced-motion: reduce)').matches;
     this.spin = this.calm ? 0 : (opts.spin ?? 0.022);   // degrees per frame when idle
     this.hover = null;
+    this.hold = false;      // set while a question is waiting on an answer
     this._anim = null;
     this._raf = null;
     this._stars = null;
@@ -178,7 +179,10 @@ export class Globe {
   stop() { if (this._raf) cancelAnimationFrame(this._raf); this._raf = null; }
   loop() {
     this._raf = requestAnimationFrame(() => this.loop());
-    if (!this._anim && !this.dragging && this.spin) this.lon = (this.lon + this.spin) % 360;
+    /* The planet turns while you are looking at it and stops while you are
+       working on it. Drifting under a question moves the star off the country
+       you were reading, which is the one thing the view has to keep still. */
+    if (!this._anim && !this.dragging && !this.hold && this.spin) this.lon = (this.lon + this.spin) % 360;
     this.draw();
   }
 
@@ -224,13 +228,23 @@ export class Globe {
       let drew = false;
       for (const ring of rings) if (this.tracePath(ring)) drew = true;
       if (!drew) continue;
-      ctx.fillStyle = isMark && this.revealed ? this.c('--globe-mark', '#c9553d')
+      const mark = this.c('--globe-mark', '#c9553d');
+      ctx.fillStyle = isMark
+        ? (this.revealed ? mark : this.c('--globe-marked-fill', landFill))
         : isHover ? this.c('--globe-hover', '#88a765')
         : this.dim ? landDim : landFill;
       ctx.fill();
-      ctx.lineWidth = isMark ? 1.2 : 0.5;
-      ctx.strokeStyle = isMark ? this.c('--globe-mark', '#c9553d') : edge;
-      ctx.stroke();
+      /* The country in question is drawn as a country, not as a dot on top of
+         one — you should be able to see its shape and where its borders run. */
+      if (isMark) {
+        ctx.save();
+        ctx.shadowColor = mark; ctx.shadowBlur = 14;
+        ctx.lineJoin = 'round';
+        ctx.lineWidth = 2.6; ctx.strokeStyle = mark; ctx.stroke();
+        ctx.restore();
+      } else {
+        ctx.lineWidth = 0.5; ctx.strokeStyle = edge; ctx.stroke();
+      }
     }
 
     /* the limb: a soft rim, then the atmosphere bleeding outward */

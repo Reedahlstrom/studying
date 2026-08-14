@@ -2728,7 +2728,12 @@ function boot() {
     /* For the countries deck, studying is the globe. Reading "Peru — South
        America" teaches a sentence; finding Peru teaches the map. */
     const d = activeDeck();
-    if (d && d.id === WORLD_DECK && $('#deckStart').dataset.action === 'study') { startGlobe(); return; }
+    /* any way of starting this deck is the globe — including studying ahead,
+       which used to quietly drop back to plain cards */
+    if (d && d.id === WORLD_DECK && ['study', 'ahead'].includes($('#deckStart').dataset.action)) {
+      startGlobe();
+      return;
+    }
     cameFrom = 'deck';
     const action = $('#deckStart').dataset.action;
     if (action === 'add') return go('add');
@@ -2968,6 +2973,7 @@ function startGlobe() {
       addEventListener('pointerup', () => { if (globe) globe.dragging = null; });
     }
     globe.spin = pace().spin;
+    globe.hold = false;
     globe.resize();
     globe.draw();          // one frame immediately, so it is never blank
     globe.start();
@@ -3003,6 +3009,7 @@ async function nextGlobe() {
   }
   globe.marked = code;
   globe.dim = true;
+  globe.hold = true;                 // stop drifting: the star must stay put
   $('#globeVeil').classList.add('on');
   renderGlobeOptions(step);
 }
@@ -3090,6 +3097,7 @@ function finishGlobe() {
   $('#globeVeil').classList.remove('on');
   gsession.at = null;
   globe.marked = null; globe.dim = false; globe.revealed = false;
+  globe.hold = false;                // the round is over — let it turn again
   globe.animate({ lon: globe.lon, lat: globe.lat, zoom: globe.zoom },
                 { lon: globe.lon, lat: -12, zoom: 1 }, 900);
   $('#globeCount').textContent = `${total} / ${total}`;
