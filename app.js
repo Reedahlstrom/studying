@@ -6,6 +6,7 @@ import { PHASES, PRINCIPLES, CURRICULUM_CARDS } from './curriculum.js';
 import { MATH_CARDS } from './math.js';
 import { COUNTRY_CARDS, LEADER_CARDS, LEADER_STAMP } from './countries.js';
 import { KNOWLEDGE_CARDS } from './knowledge.js';
+import { Globe, META, CENTRE } from './globe.js';
 import { AMBITION, chunkText, firstLetters, fadeText, gradeTyping, estimateAll, wordsIn } from './passages.js';
 import * as PLAN from './planner.js';
 import { CADENCE, perWeekOf, requiredToday, availableToday, gateBlockers, gateOpen, didOn, stats as habitStats, goalProgress } from './planner.js';
@@ -457,10 +458,11 @@ function buildTabs() {
 
 let current = 'decks';
 function go(view, opts = {}) {
-  const needsDeck = ['deck', 'path', 'study', 'add', 'browse'].includes(view);
+  const needsDeck = ['deck', 'path', 'study', 'add', 'browse', 'globe'].includes(view);
   if (needsDeck && !activeDeck()) view = 'decks';
   if (view === 'study' && !opts.keepSession) startSession(opts.filter || null);
   if (current === 'study' && view !== 'study') session = null;
+  if (current === 'globe' && view !== 'globe') { gsession = null; if (globe) globe.stop(); }
 
   current = view;
   $$('.view').forEach((v) => v.classList.toggle('on', v.dataset.view === view));
@@ -984,6 +986,8 @@ function renderDeck() {
   $('#statMastered').textContent = mastered.length;
   $('#statStreak').textContent = liveStreak();
   $('#quickPathLabel').textContent = isCurriculum(deck) ? 'The path' : 'Topics';
+
+  $('#globeLaunch').hidden = deck.id !== WORLD_DECK;
 
   const btn = $('#deckStart');
   if (!cards.length) {
@@ -2671,6 +2675,7 @@ function boot() {
   safely('setupBrowse', setupBrowse);
   safely('setupModals', setupModals);
   safely('setupPlanner', setupPlanner);
+  safely('setupGlobe', setupGlobe);
   safely('setupSettings', setupSettings);
   setEngine('local');
 
@@ -2787,4 +2792,164 @@ try {
     } catch (_) { /* best effort */ }
     location.reload();
   });
+}
+
+/* ───────────────────────── the globe ─────────────────────────
+   A visual way through the same deck. The countries it asks about are chosen
+   by the same Leitner state as the cards, and answering grades the card — so
+   an evening on the globe counts, rather than being a separate toy with its
+   own forgotten progress. */
+let globe = null;
+let gsession = null;
+
+function globeCountries(n) {
+  const deck = state.decks.find((d) => d.id === WORLD_DECK);
+  if (!deck) return [];
+  const today = dayKey();
+  /* the location card is the one the globe actually tests */
+  const isWhere = (c) => c.front.startsWith('Where is ');
+  const pool = deckCards(WORLD_DECK).filter((c) => isWhere(c) && !c.mastered && c.group && CENTRE[c.group]);
+  const due = pool.filter((c) => isReview(c, today));
+  const fresh = shuffle(pool.filter(isNew));
+  const picked = [...shuffle(due), ...fresh].slice(0, n);
+  return picked;
+}
+
+function startGlobe() {
+  console.log('[globe] startGlobe');
+  const picked = globeCountries(10);
+  if (!picked.length) { toast('Nothing waiting on the globe tonight.', 'bad'); return; }
+  gsession = { queue: picked, i: 0, right: 0, answered: false };
+  go('globe');
+  /* setTimeout, not requestAnimationFrame: frames do not fire while the tab is
+     unpainted, and setup must not depend on being watched. */
+  setTimeout(() => {
+    if (!globe) {
+      globe = new Globe($('#globeCanvas'), {});
+      addEventListener('resize', () => globe && globe.resize());
+      /* The canvas box changes whenever the answers below it reflow, and a
+         buffer sized for the old box gets stretched into an ellipse. Watch the
+         element itself rather than the window. */
+      if (window.ResizeObserver) {
+        new ResizeObserver(() => { if (globe) { globe.resize(); globe.draw(); } })
+          .observe($('#globeCanvas'));
+      }
+      $('#globeCanvas').addEventListener('pointerdown', (e) => {
+        if (!gsession || gsession.answered) return;
+        const r = $('#globeCanvas').getBoundingClientRect();
+        globe.dragging = { x: e.clientX, y: e.clientY, lon: globe.lon, lat: globe.lat, moved: false };
+      });
+      addEventListener('pointermove', (e) => {
+        if (!globe || !globe.dragging) return;
+        const d = globe.dragging;
+        const dx = e.clientX - d.x, dy = e.clientY - d.y;
+        if (Math.abs(dx) + Math.abs(dy) > 3) d.moved = true;
+        globe.lon = d.lon - dx * 0.32;
+        globe.lat = Math.max(-80, Math.min(80, d.lat + dy * 0.32));
+      });
+      addEventListener('pointerup', () => { if (globe) globe.dragging = null; });
+    }
+    globe.resize();
+    globe.draw();          // one frame immediately, so it is never blank
+    globe.start();
+    nextGlobe();
+  }, 0);
+}
+
+async function nextGlobe() {
+  if (!gsession) return;
+  const card = gsession.queue[gsession.i];
+  $('#globeDone').hidden = true;
+  $('#globeOptions').hidden = false;
+  document.querySelector('.globe-name')?.remove();
+  if (!card) return finishGlobe();
+
+  const code = card.group;
+  gsession.answered = false;
+  globe.marked = null; globe.revealed = false; globe.dim = false;
+  $('#globeCount').textContent = `${gsession.i + 1} / ${gsession.queue.length}`;
+  $('#globeFill').style.width = `${(gsession.i / gsession.queue.length) * 100}%`;
+  $('#globeScore').textContent = gsession.right;
+  $('#globeRegion').textContent = META[code] ? META[code].r : '';
+  $('#globeQ').textContent = 'Which one is starred?';
+
+  /* fly first, then mark — arriving on a star that was already there is flat */
+  $('#globeVeil').classList.remove('on');
+  await globe.flyTo(code, { ms: 1400 });
+  if (!gsession || gsession.queue[gsession.i] !== card) return;   // left mid-flight
+  globe.marked = code;
+  globe.dim = true;
+  $('#globeVeil').classList.add('on');
+  renderGlobeOptions(card, code);
+}
+
+function renderGlobeOptions(card, code) {
+  const right = META[code].n;
+  const region = META[code].r;
+  /* wrong answers from the same region, because "is it Togo or Benin" is the
+     question worth asking, and "is it Togo or Iceland" is not */
+  const near = Object.entries(META).filter(([k, m]) => k !== code && m.r === region).map(([, m]) => m.n);
+  const far = Object.entries(META).filter(([k, m]) => k !== code && m.r !== region).map(([, m]) => m.n);
+  const wrong = [...shuffle(near).slice(0, 3), ...shuffle(far)].slice(0, 3);
+  const options = shuffle([right, ...wrong]);
+  $('#globeOptions').innerHTML = options
+    .map((n) => `<button class="globe-opt" data-name="${esc(n)}">${esc(n)}</button>`).join('');
+  $$('#globeOptions .globe-opt').forEach((b) =>
+    b.addEventListener('click', () => answerGlobe(card, code, b.dataset.name === right, b)));
+}
+
+function answerGlobe(card, code, correct, btn) {
+  if (!gsession || gsession.answered) return;
+  gsession.answered = true;
+  const right = META[code].n;
+  globe.revealed = true;
+  globe.dim = false;
+
+  $$('#globeOptions .globe-opt').forEach((b) => {
+    b.disabled = true;
+    if (b.dataset.name === right) b.classList.add('right');
+    else if (b === btn) b.classList.add('wrong');
+    else b.classList.add('faded');
+  });
+  $('.globe-stage').insertAdjacentHTML('beforeend',
+    `<div class="globe-name">${esc(right)}${correct ? '' : ' — not quite'}</div>`);
+
+  grade(card, correct);
+  bumpDaily(WORLD_DECK);
+  if (correct) { gsession.right++; buzz(12); } else buzz(24);
+  $('#globeScore').textContent = gsession.right;
+  setTimeout(() => { if (gsession) { gsession.i++; nextGlobe(); } }, correct ? 1100 : 1900);
+}
+
+function finishGlobe() {
+  const total = gsession.queue.length;
+  const pct = Math.round((gsession.right / total) * 100);
+  $('#globeOptions').hidden = true;
+  $('#globeVeil').classList.remove('on');
+  globe.marked = null; globe.dim = false; globe.revealed = false;
+  globe.animate({ lon: globe.lon, lat: globe.lat, zoom: globe.zoom },
+                { lon: globe.lon, lat: -12, zoom: 1 }, 900);
+  $('#globeCount').textContent = `${total} / ${total}`;
+  $('#globeFill').style.width = '100%';
+  $('#globeRegion').textContent = '';
+  $('#globeQ').textContent = '';
+  $('#globeDoneScore').textContent = `${gsession.right} of ${total}`;
+  $('#globeDoneSub').textContent = pct === 100 ? 'Every one. The map is going in.'
+    : pct >= 70 ? 'Good round — the misses come back sooner.'
+    : 'The ones you missed are back in Box 1, which is where they should be.';
+  $('#globeDone').hidden = false;
+  save();
+}
+
+function exitGlobe() {
+  gsession = null;
+  if (globe) globe.stop();
+  go('deck');
+}
+
+function setupGlobe() {
+  on('#globeLaunch', 'click', startGlobe);
+  on('#globeExit', 'click', exitGlobe);
+  on('#globeBack', 'click', exitGlobe);
+  on('#globeAgain', 'click', () => startGlobe());
 }

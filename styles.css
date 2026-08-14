@@ -1096,3 +1096,119 @@ select { padding-right: 38px; cursor: pointer; }
 /* Cards that keep knocking you back — visible, so they can be fixed */
 .box-row.leech .bar { background: transparent; border: 1px dashed var(--gold, #b08430); }
 .box-row.leech .n { color: var(--gold, #b08430); }
+
+/* ══════════ the globe ══════════ */
+#view-globe {
+  /* Sea reads as water, land reads as land. They were both pale green, which
+     left the coastlines invisible from any distance. */
+  --globe-sea-lit: #cfe3ee; --globe-sea: #a8cadd; --globe-sea-dark: #6d9cb8;
+  --globe-land: #7c9c58; --globe-land-dim: #93a878; --globe-edge: rgba(28,40,20,.4);
+  --globe-grid: rgba(255,255,255,.32); --globe-rim: rgba(40,70,90,.4);
+  --globe-halo: rgba(130,190,225,.5); --globe-mark: #d24a2c; --globe-hover: #96b76d;
+  --globe-star: ;
+  position: fixed; inset: 0; z-index: 60;
+  display: grid; grid-template-rows: auto 1fr auto;
+  background: radial-gradient(120% 80% at 50% 0%, var(--bg-elev) 0%, var(--bg) 70%);
+  padding: 0; margin: 0; max-width: none;
+}
+[data-theme="dark"] #view-globe {
+  --globe-sea-lit: #1d4358; --globe-sea: #12303f; --globe-sea-dark: #071820;
+  --globe-land: #7ba35c; --globe-land-dim: #4e6242; --globe-edge: rgba(0,0,0,.5);
+  --globe-grid: rgba(255,255,255,.13); --globe-rim: rgba(140,190,255,.28);
+  --globe-halo: rgba(90,150,200,.34); --globe-star: rgba(255,255,255,.9);
+  background: radial-gradient(120% 80% at 50% 0%, #101c22 0%, #060b0e 75%);
+}
+.globe-bar {
+  display: flex; align-items: center; gap: 14px;
+  padding: max(12px, env(safe-area-inset-top)) 16px 10px;
+}
+.globe-stage { position: relative; min-height: 0; }
+#globeCanvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+/* A vignette to draw the eye inward. It was a grey smudge over a light page,
+   so it is now barely there in daylight and does the work at night. */
+.globe-veil {
+  position: absolute; inset: 0; pointer-events: none; opacity: 0;
+  background: radial-gradient(70% 70% at 50% 50%, transparent 45%, rgba(20,30,40,.1) 100%);
+  transition: opacity .7s var(--ease);
+}
+[data-theme="dark"] .globe-veil {
+  background: radial-gradient(70% 70% at 50% 50%, transparent 40%, rgba(0,0,0,.45) 100%);
+}
+.globe-veil.on { opacity: 1; }
+
+.globe-ask {
+  padding: 4px 16px max(18px, env(safe-area-inset-bottom));
+  display: grid; gap: 10px; justify-items: center;
+  max-width: 560px; width: 100%; margin: 0 auto;
+}
+.globe-region {
+  font-size: 11.5px; letter-spacing: .09em; text-transform: uppercase;
+  color: var(--text-faint); font-weight: 620;
+}
+.globe-q { font-size: clamp(17px, 4.6vw, 21px); font-weight: 660; letter-spacing: -.02em; text-align: center; text-wrap: balance; }
+.globe-options { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; width: 100%; }
+.globe-opt {
+  padding: 15px 12px; border-radius: 15px; font-size: 15px; font-weight: 580;
+  background: var(--bg-elev); border: 1px solid var(--line-soft); color: var(--text);
+  box-shadow: var(--shadow); text-wrap: balance; line-height: 1.3;
+  transition: transform .18s var(--spring), border-color .2s, background .2s, opacity .3s;
+}
+.globe-opt:hover:not(:disabled) { transform: translateY(-2px); border-color: var(--line); }
+.globe-opt:active:not(:disabled) { transform: scale(.97); }
+.globe-opt.right {
+  background: color-mix(in srgb, var(--olive) 22%, var(--bg-elev));
+  border-color: var(--olive); color: var(--olive-deep); font-weight: 680;
+}
+[data-theme="dark"] .globe-opt.right { color: #eaf3e2; }
+.globe-opt.wrong {
+  background: color-mix(in srgb, #c0523a 16%, var(--bg-elev));
+  border-color: #c0523a; color: #93341f;
+}
+[data-theme="dark"] .globe-opt.wrong { color: #ffd9cf; }
+.globe-opt.faded { opacity: .4; }
+.globe-opt:disabled { cursor: default; }
+@media (max-width: 380px) { .globe-options { grid-template-columns: 1fr; } }
+
+.globe-done { display: grid; gap: 6px; justify-items: center; text-align: center; animation: riseIn .45s var(--ease) both; }
+.globe-done-score { font-size: clamp(30px, 9vw, 42px); font-weight: 700; letter-spacing: -.03em; color: var(--olive-deep); }
+[data-theme="dark"] .globe-done-score { color: var(--olive); }
+.globe-done-sub { font-size: 14px; color: var(--text-dim); text-wrap: pretty; }
+.globe-done-actions { display: flex; gap: 10px; margin-top: 10px; }
+.globe-done-actions .btn { padding: 13px 22px; }
+
+/* the answer landing — a quick flash of the name over the planet */
+.globe-name {
+  position: absolute; left: 50%; transform: translateX(-50%);
+  bottom: 8%; padding: 8px 16px; border-radius: 999px;
+  background: color-mix(in srgb, var(--bg-elev) 88%, transparent);
+  border: 1px solid var(--line-soft); box-shadow: var(--shadow-lg);
+  font-size: 15px; font-weight: 640; white-space: nowrap;
+  animation: nameIn .5s var(--spring) both;
+}
+@keyframes nameIn { from { opacity: 0; transform: translate(-50%, 10px); } to { opacity: 1; transform: translate(-50%, 0); } }
+@media (prefers-reduced-motion: reduce) {
+  .globe-opt, .globe-veil, .globe-name { transition: none; animation: none; }
+}
+
+/* the way in */
+.globe-launch {
+  display: flex; align-items: center; gap: 14px; width: 100%;
+  margin-top: 14px; padding: 16px 18px; border-radius: var(--r-lg);
+  background: linear-gradient(135deg, color-mix(in srgb, var(--olive) 14%, var(--bg-elev)), var(--bg-elev));
+  border: 1px solid color-mix(in srgb, var(--olive) 30%, transparent);
+  box-shadow: var(--shadow); text-align: left; color: var(--text);
+  transition: transform .25s var(--spring), box-shadow .3s, border-color .25s;
+}
+.globe-launch:hover { transform: translateY(-2px); box-shadow: var(--shadow-lg); border-color: var(--olive); }
+.globe-launch:active { transform: scale(.99); }
+.globe-launch-orb {
+  flex: none; display: grid; place-items: center; width: 42px; height: 42px; border-radius: 50%;
+  background: radial-gradient(circle at 32% 28%, #a8c98a, var(--olive-deep));
+  color: rgba(255,255,255,.85);
+}
+.globe-launch-orb svg { width: 26px; height: 26px; fill: none; stroke: currentColor; stroke-width: 1.3; }
+.globe-launch span:nth-child(2) { display: grid; gap: 2px; margin-right: auto; }
+.globe-launch strong { font-size: 15.5px; font-weight: 650; letter-spacing: -.01em; }
+.globe-launch em { font-style: normal; font-size: 12.5px; color: var(--text-dim); }
+.globe-launch-go { width: 20px; height: 20px; fill: none; stroke: var(--olive-deep); stroke-width: 2; stroke-linecap: round; }
+[data-theme="dark"] .globe-launch-go { stroke: var(--olive); }

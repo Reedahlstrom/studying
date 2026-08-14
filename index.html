@@ -103,6 +103,14 @@
       <button class="quick" data-go="study"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="7" width="13" height="13" rx="3"/><path d="M8 4h9a3 3 0 0 1 3 3v9"/></svg><span>Study</span></button>
     </div>
 
+    <button class="globe-launch" id="globeLaunch" hidden>
+      <span class="globe-launch-orb"><svg viewBox="0 0 24 24" aria-hidden="true">
+        <circle cx="12" cy="12" r="9"/><ellipse cx="12" cy="12" rx="4" ry="9"/><path d="M3.6 9h16.8M3.6 15h16.8"/>
+      </svg></span>
+      <span><strong>Take me round the globe</strong><em>Ten countries, starred on the planet</em></span>
+      <svg class="globe-launch-go" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h13M13 6l6 6-6 6"/></svg>
+    </button>
+
     <div class="panel">
       <div class="panel-head"><h2>Box breakdown</h2><span class="hint">right → next box · wrong → Box 1</span></div>
       <div class="boxes" id="boxes"></div>
@@ -122,6 +130,39 @@
     </div>
     <p class="lede" id="pathLede">Each idea sits on the ones before it. Tap any node to study just that piece.</p>
     <div class="tree" id="tree"></div>
+  </section>
+
+  <!-- ───────────────── GLOBE ───────────────── -->
+  <section class="view" id="view-globe" data-view="globe">
+    <div class="globe-bar">
+      <button class="icon-btn ghost" id="globeExit" aria-label="Leave the globe">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+      <div class="progress">
+        <div class="progress-track"><div class="progress-fill" id="globeFill"></div></div>
+        <span class="progress-text" id="globeCount">0 / 0</span>
+      </div>
+      <span class="box-chip" id="globeScore">0</span>
+    </div>
+
+    <div class="globe-stage">
+      <canvas id="globeCanvas"></canvas>
+      <div class="globe-veil" id="globeVeil"></div>
+    </div>
+
+    <div class="globe-ask">
+      <p class="globe-region" id="globeRegion">—</p>
+      <h2 class="globe-q" id="globeQ">Which country is starred?</h2>
+      <div class="globe-options" id="globeOptions"></div>
+      <div class="globe-done" id="globeDone" hidden>
+        <p class="globe-done-score" id="globeDoneScore">—</p>
+        <p class="globe-done-sub" id="globeDoneSub">—</p>
+        <div class="globe-done-actions">
+          <button class="btn ghost" id="globeAgain">Again</button>
+          <button class="btn primary" id="globeBack">Done</button>
+        </div>
+      </div>
+    </div>
   </section>
 
   <!-- ───────────────── STUDY ───────────────── -->
