@@ -190,6 +190,7 @@ function normalizeCard(c) {
 let saveTimer = null;
 function writeNow() {
   clearTimeout(saveTimer);
+  saveTimer = null;
   try { localStorage.setItem(STORE_KEY, JSON.stringify(state)); publishStatus(); }
   catch (e) { toast('Could not save — storage is full.', 'bad'); }
 }
@@ -2680,7 +2681,10 @@ function seed() {
     });
   });
   if (!state.activeDeck) state.activeDeck = null;
-  save();
+  /* Written at once, not on the debounce. Seeding migrates decks and cards,
+     and a migration that only lands when you happen to tap something is a
+     migration that silently un-applies itself every reload. */
+  writeNow();
 }
 
 /* ───────────────────────── boot ───────────────────────── */
