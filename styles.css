@@ -1220,3 +1220,8 @@ select { padding-right: 38px; cursor: pointer; }
 .globe-launch em { font-style: normal; font-size: 12.5px; color: var(--text-dim); }
 .globe-launch-go { width: 20px; height: 20px; fill: none; stroke: var(--olive-deep); stroke-width: 2; stroke-linecap: round; }
 [data-theme="dark"] .globe-launch-go { stroke: var(--olive); }
+
+/* flag options are the picture, not a label beside one */
+.globe-options.flags { grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.globe-options.flags .globe-opt { font-size: clamp(30px, 8vw, 42px); padding: 12px 4px; line-height: 1.1; }
+@media (max-width: 380px) { .globe-options.flags { grid-template-columns: repeat(4, 1fr); } }

@@ -987,7 +987,11 @@ function renderDeck() {
   $('#statStreak').textContent = liveStreak();
   $('#quickPathLabel').textContent = isCurriculum(deck) ? 'The path' : 'Topics';
 
-  $('#globeLaunch').hidden = deck.id !== WORLD_DECK;
+  /* Start session is the globe for this deck, so a second button offering the
+     same thing was just noise. The quick row keeps a way back to plain cards. */
+  $('#globeLaunch').hidden = true;
+  const studyQuick = $('.quick[data-go="study"] span');
+  if (studyQuick) studyQuick.textContent = deck.id === WORLD_DECK ? 'As cards' : 'Study';
 
   const btn = $('#deckStart');
   if (!cards.length) {
@@ -1025,7 +1029,7 @@ function renderDeck() {
     $('#deckSub').textContent = bits.length
       ? `Tonight: ${bits.join(' · ')}.`
       : `${left} ${unit}${left === 1 ? '' : 's'} due today.`;
-    btn.querySelector('span').textContent = 'Start session';
+    btn.querySelector('span').textContent = deck.id === WORLD_DECK ? 'Spin the globe' : 'Start session';
     btn.dataset.action = 'study'; btn.disabled = false;
   }
 
@@ -2690,6 +2694,10 @@ function boot() {
   $$('.quick[data-go]').forEach((b) => b.addEventListener('click', () => { cameFrom = 'deck'; go(b.dataset.go); }));
 
   $('#deckStart').addEventListener('click', () => {
+    /* For the countries deck, studying is the globe. Reading "Peru — South
+       America" teaches a sentence; finding Peru teaches the map. */
+    const d = activeDeck();
+    if (d && d.id === WORLD_DECK && $('#deckStart').dataset.action === 'study') { startGlobe(); return; }
     cameFrom = 'deck';
     const action = $('#deckStart').dataset.action;
     if (action === 'add') return go('add');
@@ -2802,22 +2810,58 @@ try {
 let globe = null;
 let gsession = null;
 
-function globeCountries(n) {
-  const deck = state.decks.find((d) => d.id === WORLD_DECK);
-  if (!deck) return [];
+/* Every card in the countries deck, asked on the globe.
+
+   The deck has four kinds — where a country is, its capital, the reverse of
+   its capital, and its flag. All four are questions about a place, so all four
+   are better asked while looking at the place. The globe is the deck's study
+   mode, not a side attraction. */
+const globeKind = (c) => {
+  if (c.front.startsWith('Where is ')) return 'where';
+  if (c.front.startsWith('Capital of ')) return 'capital';
+  if (c.front.startsWith("Which country's capital is ")) return 'capital';
+  if (/Which (country|territory) is this\?$/.test(c.front)) return 'flag';
+  return null;
+};
+
+function globeCards(n) {
+  if (!state.decks.find((d) => d.id === WORLD_DECK)) return [];
   const today = dayKey();
-  /* the location card is the one the globe actually tests */
-  const isWhere = (c) => c.front.startsWith('Where is ');
-  const pool = deckCards(WORLD_DECK).filter((c) => isWhere(c) && !c.mastered && c.group && CENTRE[c.group]);
-  const due = pool.filter((c) => isReview(c, today));
-  const fresh = shuffle(pool.filter(isNew));
-  const picked = [...shuffle(due), ...fresh].slice(0, n);
-  return picked;
+  const pool = deckCards(WORLD_DECK).filter((c) =>
+    !c.mastered && c.group && CENTRE[c.group] && META[c.group] && globeKind(c));
+  const due = shuffle(pool.filter((c) => isReview(c, today)));
+  /* reviews first, but never the whole night — same rule the decks follow */
+  const fresh = intake(pool.filter(isNew), { ordered: false });
+  const keepForNew = Math.min(fresh.length, Math.max(1, Math.floor(n / 3)));
+  const picked = due.length > n
+    ? [...due.slice(0, n - keepForNew), ...fresh.slice(0, keepForNew)]
+    : [...due, ...fresh].slice(0, n);
+  /* never ask about the same country twice in one round */
+  const seen = new Set();
+  return picked.filter((c) => (seen.has(c.group) ? false : seen.add(c.group)));
 }
 
+/* the flag, from the ISO code — the same derivation the cards use */
+const flagFor = (code) => String.fromCodePoint(...[...code].map((ch) => 0x1f1e6 + ch.charCodeAt(0) - 65));
+
+function globeQuestion(card, code) {
+  const kind = globeKind(card);
+  const m = META[code];
+  if (kind === 'capital') {
+    return {
+      prompt: 'What is its capital?',
+      right: capitalLabel(card.front.startsWith('Capital of ')
+        ? card.back
+        : card.front.replace(/^Which country's capital is /, '').replace(/\?$/, '')),
+      pool: 'capital',
+    };
+  }
+  if (kind === 'flag') return { prompt: 'Which flag is its own?', right: flagFor(code), pool: 'flag' };
+  return { prompt: 'Which one is starred?', right: m.n, pool: 'name' };
+}
 function startGlobe() {
   console.log('[globe] startGlobe');
-  const picked = globeCountries(10);
+  const picked = globeCards(10);
   if (!picked.length) { toast('Nothing waiting on the globe tonight.', 'bad'); return; }
   /* Each round carries a token. Timers scheduled by the last round keep
      running after you leave, and without this they advance the next one —
@@ -2875,7 +2919,6 @@ async function nextGlobe() {
   $('#globeFill').style.width = `${(gsession.i / gsession.queue.length) * 100}%`;
   $('#globeScore').textContent = gsession.right;
   $('#globeRegion').textContent = META[code] ? META[code].r : '';
-  $('#globeQ').textContent = 'Which one is starred?';
 
   /* fly first, then mark — arriving on a star that was already there is flat */
   $('#globeVeil').classList.remove('on');
@@ -2888,24 +2931,44 @@ async function nextGlobe() {
 }
 
 function renderGlobeOptions(card, code) {
-  const right = META[code].n;
+  const { prompt, right, pool } = globeQuestion(card, code);
+  $('#globeQ').textContent = prompt;
   const region = META[code].r;
   /* wrong answers from the same region, because "is it Togo or Benin" is the
      question worth asking, and "is it Togo or Iceland" is not */
-  const near = Object.entries(META).filter(([k, m]) => k !== code && m.r === region).map(([, m]) => m.n);
-  const far = Object.entries(META).filter(([k, m]) => k !== code && m.r !== region).map(([, m]) => m.n);
-  const wrong = [...shuffle(near).slice(0, 3), ...shuffle(far)].slice(0, 3);
+  const others = Object.keys(META).filter((k) => k !== code && CENTRE[k]);
+  const near = shuffle(others.filter((k) => META[k].r === region));
+  const far = shuffle(others.filter((k) => META[k].r !== region));
+  const label = (k) => (pool === 'flag' ? flagFor(k) : pool === 'capital' ? capitalOf(k) : META[k].n);
+  const wrong = [];
+  for (const k of [...near, ...far]) {
+    const v = label(k);
+    if (!v || v === right || wrong.includes(v)) continue;
+    wrong.push(v);
+    if (wrong.length === 3) break;
+  }
   const options = shuffle([right, ...wrong]);
+  $('#globeOptions').className = 'globe-options' + (pool === 'flag' ? ' flags' : '');
   $('#globeOptions').innerHTML = options
     .map((n) => `<button class="globe-opt" data-name="${esc(n)}">${esc(n)}</button>`).join('');
   $$('#globeOptions .globe-opt').forEach((b) =>
-    b.addEventListener('click', () => answerGlobe(card, code, b.dataset.name === right, b)));
+    b.addEventListener('click', () => answerGlobe(card, code, b.dataset.name === right, b, right)));
 }
 
-function answerGlobe(card, code, correct, btn) {
+/* One clean city name. The cards spell out every seat — "Mbabane
+   (administrative) · Lobamba (legislative)" — and an option in that shape
+   announces itself as the odd one out before you have read it. */
+const capitalLabel = (text) => String(text || '').split(' · ')[0].replace(/\s*\([^)]*\)/g, '').trim();
+function capitalOf(code) {
+  const name = META[code] && META[code].n;
+  if (!name) return null;
+  const c = deckCards(WORLD_DECK).find((x) => x.front === `Capital of ${name}?`);
+  return c ? capitalLabel(c.back) : null;
+}
+
+function answerGlobe(card, code, correct, btn, right) {
   if (!gsession || gsession.answered) return;
   gsession.answered = true;
-  const right = META[code].n;
   globe.revealed = true;
   globe.dim = false;
 
@@ -2915,8 +2978,11 @@ function answerGlobe(card, code, correct, btn) {
     else if (b === btn) b.classList.add('wrong');
     else b.classList.add('faded');
   });
+  /* always name the country, whatever was being asked, so the place and the
+     fact land together */
+  const label = META[code].n + (right === META[code].n ? '' : ' — ' + right);
   $('.globe-stage').insertAdjacentHTML('beforeend',
-    `<div class="globe-name">${esc(right)}${correct ? '' : ' — not quite'}</div>`);
+    `<div class="globe-name">${esc(label)}</div>`);
 
   grade(card, correct);
   bumpDaily(WORLD_DECK);
