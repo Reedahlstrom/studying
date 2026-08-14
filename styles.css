@@ -1092,3 +1092,7 @@ select { padding-right: 38px; cursor: pointer; }
 }
 .run-line:last-child { color: var(--text-dim); }
 .mem-text.blank { color: var(--text-faint); font-style: italic; }
+
+/* Cards that keep knocking you back — visible, so they can be fixed */
+.box-row.leech .bar { background: transparent; border: 1px dashed var(--gold, #b08430); }
+.box-row.leech .n { color: var(--gold, #b08430); }

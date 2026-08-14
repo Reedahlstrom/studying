@@ -243,7 +243,10 @@ function isDue(card, today = dayKey()) {
   if (card.mastered) return false;
   if (card.passageId && !card.intro) return false;   // not introduced yet — waits its turn
   if (!card.lastReviewed) return true;
-  if (card.box <= 1) return true;                      // Box 1 comes up every session
+  /* Box 1 means every day, not every session. Without this a card you missed
+     came straight back the same evening, forever. */
+  if (card.lastReviewed === today) return false;
+  if (card.box <= 1) return true;
   return daysBetween(card.lastReviewed, today) >= INTERVALS[card.box];
 }
 function nextDueKey(card) {
@@ -260,7 +263,10 @@ function grade(card, correct) {
     card.right += 1;
     if (card.box >= BOX_COUNT) card.mastered = true;   // Box 5 + correct = retired
     else card.box += 1;
-  } else card.box = 1;
+  } else {
+    card.box = 1;
+    card.lapses = (card.lapses || 0) + 1;   // how many times it has knocked you back
+  }
   save();
 }
 
@@ -1036,6 +1042,12 @@ function renderDeck() {
   rows.push(`<div class="box-row done"><b>Mastered</b>
       <div class="bar"><i style="width:${(mastered.length / max) * 100}%"></i></div>
       <span class="n">${mastered.length}</span></div>`);
+  const leeches = cards.filter((c) => (c.lapses || 0) >= 4 && !c.mastered);
+  if (leeches.length) {
+    rows.push(`<div class="box-row leech"><b>Fighting you</b>
+      <div class="bar"></div>
+      <span class="n">${leeches.length}<em class="every">missed 4+ times — worth rewording</em></span></div>`);
+  }
   if (waiting) {
     const room = Math.max(0, BOX1_LIMIT - boxed[0].length);
     rows.push(`<div class="box-row pool"><b>Not started</b>
@@ -1230,11 +1242,23 @@ function startSession(filter = null, studyAhead = false) {
     fresh = [...fresh, ...intake(extra, deck)];
   }
 
-  let due = [...scheduled, ...lapsed, ...fresh];
+  /* Reviews come first, but they cannot have the whole night. Ten cards stuck
+     in Box 1 were filling every session, so no new card appeared for days and
+     the deck looked frozen — same cards, no progress, no end. New material
+     keeps at least a third of the session whenever there is any. */
+  const size = sessionSize(deck);
+  const reviewsFirst = [...scheduled, ...lapsed];
+  let due;
+  if (fresh.length && reviewsFirst.length > size) {
+    const keepForNew = Math.min(fresh.length, Math.max(1, Math.floor(size / 3)));
+    due = [...reviewsFirst.slice(0, size - keepForNew), ...fresh.slice(0, keepForNew)];
+  } else {
+    due = [...reviewsFirst, ...fresh];
+  }
   const queue = isText(deck)
     ? pool.filter((c) => isDue(c, today))
         .sort((a, b) => (a.passageId === b.passageId ? a.order - b.order : String(a.passageId).localeCompare(String(b.passageId))))
-    : due.slice(0, sessionSize(deck));
+    : due.slice(0, size);
   session = { queue: isText(deck) ? queue : queue, i: 0, right: 0, wrong: 0, revealed: false, requeued: new Set(), filter, text: isText(deck) };
   $('#sessionDone').hidden = true;
   $('#stage').hidden = session.text;
