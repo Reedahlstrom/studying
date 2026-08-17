@@ -58,6 +58,30 @@ console.log('\nStylesheet');
   else pass('no view forces itself on screen');
 }
 
+/* ── 2b. nothing boots before it exists ─────────────────────── */
+console.log('\nStart-up order');
+{
+  const src = fs.readFileSync(path.join(ROOT, 'app.js'), 'utf8');
+  const lines = src.split('\n');
+  const bootAt = lines.findIndex((l) => /^\s*boot\(\);\s*$/.test(l));
+  if (bootAt < 0) fail('cannot find the boot() call');
+  else {
+    /* A top-level const declared after boot() runs is in its temporal dead
+       zone during start-up. Referencing one from any setup function throws,
+       safely() swallows it, and a whole feature is silently unbound — which
+       is exactly how sync sat dead behind a console line. */
+    const late = [];
+    for (let i = bootAt + 1; i < lines.length; i++) {
+      const m = /^(?:const|let)\s+([A-Za-z_$][\w$]*)\s*=/.exec(lines[i]);
+      if (m) late.push(m[1]);
+    }
+    const boot = src.slice(0, src.indexOf('\n', src.indexOf('  boot();')));
+    const risky = late.filter((n) => new RegExp(`\\b${n}\\b`).test(boot));
+    if (risky.length) risky.forEach((n) => fail(`${n} is declared after boot() but used before it — it will throw at start-up`));
+    else pass(`nothing declared after boot() is used during it (${late.length} later declaration${late.length === 1 ? '' : 's'})`);
+  }
+}
+
 /* ── 3. the assets are pinned to the worker version ─────────── */
 console.log('\nCache');
 {

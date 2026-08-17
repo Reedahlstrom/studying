@@ -17,7 +17,12 @@ const sched = sandbox(
    const dayKey = () => day.now;
    const daysBetween = (a, b) => Math.round((new Date(b + 'T12:00:00') - new Date(a + 'T12:00:00')) / 86400000);
    const writeNow = () => {};
-   const hydrate = (x) => x;`
+   const hydrate = (x) => x;
+   /* The sandbox gets a copy of the clock, not a reference to it, so a test
+      that wants to move time has to say so through here. */
+   const setDay = (d) => { day.now = d; };
+   const today = () => day.now;`,
+  { exports: ['setDay', 'today'] }
 );
 
 /* ═══════════ 1 · Leitner scheduling ═══════════ */
@@ -494,6 +499,132 @@ describe('Safety net');
     w.setResetting(true);
     w.writeNow();
     eq('a deliberate reset is allowed through', w.stats().wrote, 2);
+  }
+}
+
+
+
+/* ═══════════ 11 · Two devices ═══════════
+   The phone and the laptop, studying the same deck on the same day, pushing
+   and pulling through one gist in whatever order they happen to. Nothing
+   either of them did may go missing. */
+describe('Two devices');
+{
+  const wire = sandbox(['NEVER_LEAVES', 'forTheWire']);
+
+  /* — the credential never leaves — */
+  {
+    const s = {
+      cards: [], decks: [],
+      settings: { syncToken: 'ghp_secret', syncGist: 'abc123', apiKey: 'sk-ant-secret', theme: 'dark', dailyTarget: 15 },
+    };
+    const sent = wire.forTheWire(s);
+    eq('the token is stripped before pushing', sent.settings.syncToken, undefined);
+    eq('and so is the gist id', sent.settings.syncGist, undefined);
+    eq('and the model key, which has no business leaving either', sent.settings.apiKey, undefined);
+    eq('everything else still goes', sent.settings.dailyTarget, 15);
+    eq('the original is untouched', s.settings.syncToken, 'ghp_secret');
+    const body = JSON.stringify(sent);
+    check('no credential anywhere in the payload',
+      !body.includes('ghp_secret') && !body.includes('sk-ant-secret'));
+  }
+
+  /* — a pull can never hand this device someone else's credential, nor
+       switch sync back on after you turned it off — */
+  {
+    const mine = { rev: 1, cards: [], decks: [], settings: { syncToken: '', syncGist: '', theme: 'light' } };
+    const theirs = { rev: 99, cards: [], decks: [], settings: { syncToken: 'ghp_theirs', syncGist: 'zzz', apiKey: 'sk-ant-theirs', theme: 'dark' } };
+    const m = sched.mergeStates(mine, theirs);
+    eq('a remote token is never adopted', m.settings.syncToken, '');
+    eq('nor a remote gist id', m.settings.syncGist, '');
+    eq('nor a remote model key', m.settings.apiKey, '');
+    eq('this device keeps its own settings', m.settings.theme, 'light');
+  }
+  {
+    /* a setting only the other side has is still welcome */
+    const mine = { rev: 1, cards: [], decks: [], settings: { theme: 'light' } };
+    const theirs = { rev: 2, cards: [], decks: [], settings: { theme: 'dark', newThing: 7 } };
+    eq('a setting this device has never seen still arrives',
+      sched.mergeStates(mine, theirs).settings.newThing, 7);
+  }
+
+  /* — the real thing: a day of studying on both, interleaved — */
+  {
+    const DECK = 60;
+    const seed = () => Array.from({ length: DECK }, (_, i) =>
+      makeCard({ id: 'c' + i, deckId: 'biz', box: 1, seen: 0, lastReviewed: null }));
+
+    let gist = { cards: seed(), decks: [], log: {}, daily: {}, rev: 0, settings: {} };
+    const clone = (o) => JSON.parse(JSON.stringify(o));
+
+    const device = (name) => ({ name, state: { ...clone(gist) } });
+    const phone = device('phone');
+    const laptop = device('laptop');
+
+    /* push = look, merge if it moved, then write — the CAS the app does */
+    const sync = (d, { pull = true } = {}) => {
+      if (pull) d.state = sched.mergeStates(d.state, clone(gist));
+      gist = clone(sched.mergeStates(clone(gist), d.state));
+    };
+
+    const study = (d, ids) => {
+      for (const id of ids) {
+        const c = d.state.cards.find((x) => x.id === id);
+        sched.grade(c, true);
+      }
+    };
+
+    /* phone does the first 20 on the train and pushes */
+    study(phone, Array.from({ length: 20 }, (_, i) => 'c' + i));
+    sync(phone);
+
+    /* laptop had the app open from before the phone pushed — it is stale —
+       and does a different 20 without pulling first */
+    study(laptop, Array.from({ length: 20 }, (_, i) => 'c' + (20 + i)));
+    sync(laptop);
+
+    /* phone comes back and catches up */
+    sync(phone);
+
+    const done = gist.cards.filter((c) => c.seen > 0).length;
+    eq('every card studied on either device survived', done, 40);
+    eq('and the deck did not grow or shrink', gist.cards.length, DECK);
+    check('every studied card is stamped', gist.cards.filter((c) => c.seen > 0).every((c) => !!c.lastReviewed));
+
+    /* both devices now agree */
+    sync(laptop);
+    sync(phone);
+    const seenOn = (d) => d.state.cards.filter((c) => c.seen > 0).length;
+    eq('the phone sees all of it', seenOn(phone), 40);
+    eq('the laptop sees all of it', seenOn(laptop), 40);
+
+    /* the same card graded on both — the later answer wins, nothing is lost */
+    const c0p = phone.state.cards.find((c) => c.id === 'c0');
+    const c0l = laptop.state.cards.find((c) => c.id === 'c0');
+    sched.setDay('2026-08-18');
+    sched.grade(c0p, true);          // phone gets it right
+    sched.grade(c0l, false);         // laptop gets it wrong, back to box 1
+    sync(phone); sync(laptop); sync(phone);
+    const c0 = gist.cards.find((c) => c.id === 'c0');
+    check('a card graded on both devices keeps the fuller history', c0.seen >= 2, `seen ${c0.seen}`);
+    eq('and is stamped for the day it was actually studied', c0.lastReviewed, '2026-08-18');
+    sched.setDay('2026-08-17');
+    eq('the clock is back where the other tests expect it', sched.today(), '2026-08-17');
+  }
+
+  /* — a device that has been off for a week must not undo the week — */
+  {
+    const old = {
+      rev: 2, decks: [], log: {}, daily: {}, settings: {},
+      cards: [makeCard({ id: 'a', seen: 0, lastReviewed: null, box: 1 })],
+    };
+    const current = {
+      rev: 200, decks: [], log: {}, daily: {}, settings: {},
+      cards: [makeCard({ id: 'a', seen: 9, lastReviewed: '2026-08-16', box: 4 })],
+    };
+    const m = sched.mergeStates(old, current);
+    eq('a stale device adopts the newer work rather than erasing it', m.cards[0].seen, 9);
+    eq('and does not drag the box back', m.cards[0].box, 4);
   }
 }
 

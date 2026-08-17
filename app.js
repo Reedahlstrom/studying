@@ -266,8 +266,36 @@ function mergeStates(mine, theirs) {
     out.daily = { day: md.day, count: Math.max(md.count || 0, td.count || 0), decks };
   } else out.daily = (md.day || '') > (td.day || '') ? md : td;
 
+  /* Settings belong to the device, not to the ledger. Two reasons, and both
+     of them bit before this line existed: the whole state object is what gets
+     pushed, so a remote copy carries the other device's sync credential and
+     would hand it to this one; and turning sync off here would be silently
+     undone by the next pull. A setting the other side has and this one has
+     never heard of is still welcome — this device just always wins on its
+     own. */
+  out.settings = { ...(theirs.settings || {}), ...(mine.settings || {}) };
+  /* Credentials are this device's alone, in both directions: they are never
+     pushed (see forTheWire) and a remote copy is never adopted. */
+  for (const k of ['syncToken', 'syncGist', 'apiKey']) {
+    out.settings[k] = (mine.settings || {})[k] || '';
+  }
+
   out.rev = Math.max(mine.rev || 0, theirs.rev || 0);
   return out;
+}
+
+/* What actually leaves this device.
+
+   The credential must never be written into the thing it protects. Anyone
+   holding the gist already holds the token, so it buys nothing, and it means
+   revoking a device is not enough — the token would still be sitting in the
+   payload. Stripped here rather than at the call site so there is exactly one
+   place to get it wrong. */
+const NEVER_LEAVES = ['syncToken', 'syncGist', 'apiKey'];
+function forTheWire(s) {
+  const settings = { ...(s.settings || {}) };
+  for (const k of NEVER_LEAVES) delete settings[k];
+  return { ...s, settings };
 }
 
 let pendingMerge = null;
@@ -342,7 +370,11 @@ function normalizeCard(c) {
 
 let saveTimer = null;
 let lastBody = null;
-function writeNow() {
+/* `silent` means "this write is bookkeeping, not work". Syncing stamps the
+   ledger with the time it last succeeded, and if that stamp counts as a
+   change then every push schedules the next one and the app talks to GitHub
+   for ever. Only real changes are worth telling the other device about. */
+function writeNow({ silent = false } = {}) {
   clearTimeout(saveTimer);
   saveTimer = null;
   /* Nothing changed, nothing to write. Without this, any unconditional save in
@@ -372,6 +404,9 @@ function writeNow() {
     localStorage.setItem(STORE_KEY, out);
     lastBody = out;                     // exactly what is on disk
     publishStatus();
+    /* Anything worth writing down is worth the other device knowing about.
+       syncAfterWork debounces, so a burst of grading is still one push. */
+    if (!silent) syncAfterWork();
   } catch (e) { toast('Could not save — storage is full.', 'bad'); }
 }
 function save() {
@@ -677,8 +712,8 @@ function go(view, opts = {}) {
     return;
   }
   if (view === 'study' && !opts.keepSession) startSession(opts.filter || null);
-  if (current === 'study' && view !== 'study') session = null;
-  if (current === 'globe' && view !== 'globe') { gsession = null; if (globe) globe.stop(); }
+  if (current === 'study' && view !== 'study') { session = null; drainPendingRemote(); }
+  if (current === 'globe' && view !== 'globe') { gsession = null; if (globe) globe.stop(); drainPendingRemote(); }
 
   current = view;
   $$('.view').forEach((v) => v.classList.toggle('on', v.dataset.view === view));
@@ -1908,6 +1943,7 @@ function finishSession() {
   session = null;
   writeNow();
   applyPendingMerge();
+  drainPendingRemote();
   syncAfterWork();
 }
 
@@ -2973,8 +3009,16 @@ function seed() {
 /* ───────────────────────── boot ───────────────────────── */
 /* A single missing element used to take the whole app down with it —
    nothing rendered, no view active, no error visible. Wrap the wiring. */
+/* A setup pass that throws leaves a whole feature unbound — no buttons, no
+   handlers, no sign anything is wrong. That is how sync sat broken behind a
+   console line nobody reads. Now it says so on screen, because a feature that
+   quietly does not exist is worse than one that visibly fails. */
+const setupFailures = [];
 function safely(label, fn) {
-  try { fn(); } catch (e) { console.error(`[setup] ${label} failed:`, e); }
+  try { fn(); } catch (e) {
+    console.error(`[setup] ${label} failed:`, e);
+    setupFailures.push(label.replace(/^setup/, '').toLowerCase());
+  }
 }
 
 function boot() {
@@ -2999,6 +3043,9 @@ function boot() {
   setEngine('local');
   /* Say so out loud if the ledger had to be rescued — silence is how a
      restore turns into a second, quieter loss. */
+  if (setupFailures.length) {
+    setTimeout(() => toast(`Part of the app failed to start: ${setupFailures.join(', ')}. Reload, and tell Claude.`, 'bad'), 900);
+  }
   if (bootNotice) {
     const notice = bootNotice;        // read it now: the timer fires long after
     bootNotice = null;
@@ -3023,7 +3070,10 @@ function boot() {
   $('#deckTitle').addEventListener('click', () => openDeckSheet(state.activeDeck));
   $$('.quick[data-go]').forEach((b) => b.addEventListener('click', () => { cameFrom = 'deck'; go(b.dataset.go); }));
 
-  $('#deckStart').addEventListener('click', () => {
+  $('#deckStart').addEventListener('click', async () => {
+    /* Catch up before handing over a card. Studying a deck this device has
+       not heard about yet is how you end up doing the same night twice. */
+    await caughtUp();
     /* For the countries deck, studying is the globe. Reading "Peru — South
        America" teaches a sentence; finding Peru teaches the map. */
     const d = activeDeck();
@@ -3118,30 +3168,6 @@ function boot() {
   const hash = location.hash.slice(1);
   go(['today', 'decks', 'more'].includes(hash) ? hash : 'today');
 
-}
-
-/* Last line of defence: if boot dies anyway, say so and offer a way out
-   instead of leaving a white screen with no explanation. */
-try {
-  boot();
-} catch (err) {
-  console.error('boot failed:', err);
-  document.body.insertAdjacentHTML('afterbegin', `
-    <div class="boot-fail">
-      <h1>Something broke on start-up</h1>
-      <p>Your data is safe — this is a display problem, not a data one.</p>
-      <pre>${String(err && err.message || err).replace(/[<>&]/g, '')}</pre>
-      <button id="bootReload">Reload a fresh copy</button>
-    </div>`);
-  document.getElementById('bootReload').addEventListener('click', async () => {
-    try {
-      const regs = await navigator.serviceWorker.getRegistrations();
-      await Promise.all(regs.map((r) => r.unregister()));
-      const keys = await caches.keys();
-      await Promise.all(keys.map((k) => caches.delete(k)));
-    } catch (_) { /* best effort */ }
-    location.reload();
-  });
 }
 
 /* ───────────────────────── the globe ─────────────────────────
@@ -3430,45 +3456,127 @@ function exitGlobe() {
    Pull, merge, push. Never replace: the copy that did more work on a card
    wins, and ticks from both devices are kept. */
 let syncing = false;
+let remoteVersion = null;      // the stamp the gist carried when we last looked
+let firstPull = null;          // resolves once this device has caught up
+let lastGood = 0;              // when a sync last actually worked
+
 function syncState(text, kind) {
   const el = $('#syncState');
   if (el) { el.textContent = text; el.className = 'key-state' + (kind ? ' ' + kind : ''); }
 }
 
-async function runSync({ quiet = false } = {}) {
+/* Pushing is always safe. Pulling is not — merging rebuilds every card object
+   and a running session is holding references to the old ones, so a merge
+   mid-session lands grades on orphans that nothing will save. During a
+   session we push what we have and catch up afterwards. */
+async function runSync({ quiet = false, pushOnly = false } = {}) {
   const cfg = SYNC.syncConfig(state.settings);
   if (!cfg.on || syncing) return;
-  if (session || gsession) return;         // never swap state mid-session
+  const canMerge = !session && !gsession && !pushOnly;
   syncing = true;
   if (!quiet) syncState('Syncing…');
+
   try {
     const gist = await SYNC.ensureGist(cfg.token, cfg.gist);
     if (gist !== state.settings.syncGist) { state.settings.syncGist = gist; }
-    const theirs = await SYNC.pull(cfg.token, gist);
-    if (theirs) {
-      state = hydrate(mergeStates(state, theirs));
-      groveSig = null;
-      if (current === 'today') renderToday();
-      else if (current === 'decks') renderDecks();
-      else if (current === 'deck') renderDeck();
+
+    if (canMerge) {
+      const { state: theirs, version } = await SYNC.pull(cfg.token, gist);
+      remoteVersion = version;
+      if (theirs) adoptRemote(theirs);
     }
-    writeNow();
-    await SYNC.push(cfg.token, gist, state);
+
+    /* Look again right before writing. If the other device wrote while we
+       were working, take its work in first — never flatten it. */
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const now = await SYNC.version(cfg.token, gist);
+      if (now && remoteVersion && now !== remoteVersion) {
+        const { state: theirs, version } = await SYNC.pull(cfg.token, gist);
+        remoteVersion = version;
+        if (theirs && canMerge) adoptRemote(theirs);
+        else if (theirs) { pendingRemote = theirs; }   // mid-session: hold it
+        continue;
+      }
+      writeNow({ silent: true });
+      remoteVersion = await SYNC.push(cfg.token, gist, forTheWire(state));
+      break;
+    }
+
     state.settings.syncedAt = new Date().toISOString();
-    writeNow();
-    if (!quiet) syncState('Synced just now', 'ok');
+    lastGood = Date.now();
+    writeNow({ silent: true });
+    syncState('Synced just now', 'ok');
+    syncHealth();
   } catch (e) {
     syncState(e.message || 'Sync failed', 'bad');
     if (!quiet) toast(e.message || 'Sync failed.', 'bad');
-  } finally { syncing = false; }
+    syncHealth();
+  } finally {
+    syncing = false;
+    if (dirtyDuringSync) { dirtyDuringSync = false; syncAfterWork(); }
+  }
 }
 
-/* A push after study, so the other device sees it without being asked. */
+/* Work that arrived while a session was running, applied once it is over. */
+let pendingRemote = null;
+function adoptRemote(theirs) {
+  state = hydrate(mergeStates(state, theirs));
+  highWater = Math.max(highWater, state.cards.length);
+  groveSig = null;
+  if (current === 'today') renderToday();
+  else if (current === 'decks') renderDecks();
+  else if (current === 'deck') renderDeck();
+}
+function drainPendingRemote() {
+  if (!pendingRemote || session || gsession) return;
+  const theirs = pendingRemote;
+  pendingRemote = null;
+  adoptRemote(theirs);
+  writeNow();
+}
+
+/* Every change pushes. Debounced so a burst of grading is one write, and
+   floored so a long session cannot hammer the API. */
 let syncSoon = null;
+let lastPush = 0;
+let dirtyDuringSync = false;
 function syncAfterWork() {
   if (!SYNC.syncConfig(state.settings).on) return;
+  /* Syncing writes the ledger too — it stamps syncedAt. Without this, every
+     push would schedule the next one and the app would talk to GitHub for
+     ever. Anything you change mid-sync is remembered and pushed after. */
+  if (syncing) { dirtyDuringSync = true; return; }
   clearTimeout(syncSoon);
-  syncSoon = setTimeout(() => runSync({ quiet: true }), 4000);
+  const since = Date.now() - lastPush;
+  const delay = Math.max(3000, 8000 - since);
+  syncSoon = setTimeout(() => {
+    lastPush = Date.now();
+    runSync({ quiet: true, pushOnly: !!(session || gsession) });
+  }, delay);
+}
+
+/* Say so when it stops working. A sync that has quietly failed for an hour is
+   the whole problem this exists to solve, and Settings is not where anyone
+   would look. */
+function syncHealth() {
+  const el = $('#syncHealth');
+  if (!el) return;
+  const cfg = SYNC.syncConfig(state.settings);
+  if (!cfg.on) { el.hidden = true; return; }
+  const stale = lastGood && Date.now() - lastGood > 15 * 60 * 1000;
+  const never = !lastGood && !state.settings.syncedAt;
+  el.hidden = !(stale || never);
+  el.textContent = never
+    ? 'This device has never synced — your work is only here.'
+    : 'Not synced for a while — your work is only on this device.';
+}
+
+/* Wait for the first catch-up before handing over a card, so you are never
+   studying yesterday's picture of the deck. It gives up quickly: being a few
+   seconds stale is a nuisance, being unable to start is worse. */
+async function caughtUp(ms = 2500) {
+  if (!SYNC.syncConfig(state.settings).on || !firstPull) return;
+  await Promise.race([firstPull, new Promise((r) => setTimeout(r, ms))]);
 }
 
 function setupSync() {
@@ -3488,18 +3596,39 @@ function setupSync() {
     $('#syncToken').value = '';
     writeNow();
     syncState('Not connected — this device only');
+    syncHealth();
     toast('Sync turned off on this device.');
   });
-  /* on open, and whenever you come back to the app */
-  if (cfg.on) runSync({ quiet: true });
-  document.addEventListener('visibilitychange', () => { if (!document.hidden) runSync({ quiet: true }); });
+
+  /* on open */
+  if (cfg.on) firstPull = runSync({ quiet: true });
+  /* whenever you come back to it */
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) return;
+    drainPendingRemote();
+    runSync({ quiet: true });
+  });
+  /* and the moment the network comes back, because that is when a failed
+     push is waiting to be retried */
+  window.addEventListener('online', () => runSync({ quiet: true }));
+  /* a slow heartbeat, so two devices left open still converge */
+  setInterval(() => {
+    if (document.hidden || session || gsession) return;
+    runSync({ quiet: true });
+  }, 60000);
+  setInterval(syncHealth, 60000);
+  syncHealth();
 }
 
-const humanTime = (iso) => {
+/* Declared, not assigned to a const. setupSync runs during boot and reads
+   this, and a const further down the file is in its dead zone at that point —
+   which killed the whole sync setup the moment a token existed to display a
+   time for. A declaration has no such window. */
+function humanTime(iso) {
   const mins = Math.round((Date.now() - new Date(iso)) / 60000);
   return mins < 1 ? 'just now' : mins < 60 ? mins + ' min ago'
     : mins < 1440 ? Math.round(mins / 60) + 'h ago' : Math.round(mins / 1440) + 'd ago';
-};
+}
 
 function setupGlobe() {
   on('#globeLaunch', 'click', startGlobe);
@@ -3529,4 +3658,28 @@ function setupGlobe() {
   });
   on('#globeBack', 'click', exitGlobe);
   on('#globeAgain', 'click', () => startGlobe());
+}
+
+/* Last line of defence: if boot dies anyway, say so and offer a way out
+   instead of leaving a white screen with no explanation. */
+try {
+  boot();
+} catch (err) {
+  console.error('boot failed:', err);
+  document.body.insertAdjacentHTML('afterbegin', `
+    <div class="boot-fail">
+      <h1>Something broke on start-up</h1>
+      <p>Your data is safe — this is a display problem, not a data one.</p>
+      <pre>${String(err && err.message || err).replace(/[<>&]/g, '')}</pre>
+      <button id="bootReload">Reload a fresh copy</button>
+    </div>`);
+  document.getElementById('bootReload').addEventListener('click', async () => {
+    try {
+      const regs = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(regs.map((r) => r.unregister()));
+      const keys = await caches.keys();
+      await Promise.all(keys.map((k) => caches.delete(k)));
+    } catch (_) { /* best effort */ }
+    location.reload();
+  });
 }

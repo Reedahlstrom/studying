@@ -1275,3 +1275,18 @@ select { padding-right: 38px; cursor: pointer; }
 .sync-steps { margin: 0 0 12px 18px; padding: 0; display: grid; gap: 3px; }
 .sync-steps li { list-style: decimal; }
 .key-state.bad { color: var(--danger, #b4472f); }
+
+/* Sync trouble, stated plainly on the one screen you always see. Not a badge
+   or an icon — if your work is stuck on one device you should be able to read
+   why without hunting for it. */
+.sync-health {
+  margin: 10px 0 0;
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--red) 40%, transparent);
+  background: color-mix(in srgb, var(--red) 10%, transparent);
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 1.45;
+  text-wrap: pretty;
+}

@@ -66,21 +66,39 @@ export async function ensureGist(token, known) {
   return made.id;
 }
 
+/* Pull returns the ledger and the stamp it came with.
+
+   The stamp is what makes two devices safe. A gist has no conditional write,
+   so the best available is to look again immediately before pushing: if the
+   stamp moved, the other device wrote while we were thinking, and we merge
+   its work in rather than flattening it. That leaves a window of about one
+   round trip — small, and it closes on the next tick because every change
+   pushes. Without it the window is however long you had the app open. */
 export async function pull(token, gistId) {
   const g = await gh('/gists/' + gistId, token);
   const file = g.files && g.files[FILE];
-  if (!file) return null;
+  if (!file) return { state: null, version: g.updated_at || null };
   /* GitHub truncates large files in the gist response and hands you a URL */
   const raw = file.truncated ? await (await fetch(file.raw_url)).text() : file.content;
   try {
     const parsed = JSON.parse(raw);
-    return parsed && Array.isArray(parsed.cards) ? parsed : null;
-  } catch (_) { return null; }
+    return {
+      state: parsed && Array.isArray(parsed.cards) ? parsed : null,
+      version: g.updated_at || null,
+    };
+  } catch (_) { return { state: null, version: g.updated_at || null }; }
+}
+
+/* Just the stamp — cheap enough to check on every push. */
+export async function version(token, gistId) {
+  const g = await gh('/gists/' + gistId, token);
+  return g.updated_at || null;
 }
 
 export async function push(token, gistId, state) {
-  await gh('/gists/' + gistId, token, {
+  const g = await gh('/gists/' + gistId, token, {
     method: 'PATCH',
     body: JSON.stringify({ files: { [FILE]: { content: JSON.stringify(state) } } }),
   });
+  return g.updated_at || null;
 }

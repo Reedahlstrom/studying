@@ -16,8 +16,19 @@ export const source = fs.readFileSync(path.join(ROOT, 'app.js'), 'utf8');
 export function lift(name) {
   const start = source.indexOf(`function ${name}(`);
   if (start < 0) throw new Error(`no function ${name} in app.js`);
-  let depth = 0, i = source.indexOf('{', start);
-  const open = i;
+
+  /* Step over the parameter list first. A destructured parameter — say
+     `function writeNow({ silent = false } = {})` — puts braces before the
+     body, and matching from the first brace found grabs the wrong ones. */
+  let i = source.indexOf('(', start);
+  let parens = 0;
+  for (; i < source.length; i++) {
+    if (source[i] === '(') parens++;
+    else if (source[i] === ')' && --parens === 0) { i++; break; }
+  }
+
+  let depth = 0;
+  i = source.indexOf('{', i);
   for (; i < source.length; i++) {
     if (source[i] === '{') depth++;
     else if (source[i] === '}' && --depth === 0) break;
