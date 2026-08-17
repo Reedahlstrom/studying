@@ -13,7 +13,7 @@
 <link rel="manifest" href="manifest.webmanifest" />
 <link rel="icon" href="icons/icon.svg" type="image/svg+xml" />
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
-<link rel="stylesheet" href="styles.css?v=36" />
+<link rel="stylesheet" href="styles.css?v=37" />
 </head>
 <body>
 
@@ -411,8 +411,9 @@ opportunity cost&#9;what you gave up"></textarea></label>
         both are kept. Everything lives in one private gist on your own GitHub.
       </p>
       <ol class="hint sync-steps">
-        <li>Open <b>github.com/settings/tokens</b> → Generate new token (classic)</li>
-        <li>Tick only the <b>gist</b> scope, then generate</li>
+        <li>Open <b>github.com/settings/tokens</b></li>
+        <li>Use the <b>Generate new token</b> dropdown → <b>classic</b>. Fine-grained tokens cannot use gists.</li>
+        <li>Tick only the <b>gist</b> scope, then generate. It starts with <code>ghp_</code>.</li>
         <li>Paste it below on <b>each</b> device</li>
       </ol>
       <label class="field"><span>GitHub token</span>
@@ -565,6 +566,6 @@ opportunity cost&#9;what you gave up"></textarea></label>
 
 <div class="busy" id="busy" hidden><div class="spinner"></div><p id="busyText">Thinking…</p></div>
 
-<script src="app.js?v=36" type="module"></script>
+<script src="app.js?v=37" type="module"></script>
 </body>
 </html>

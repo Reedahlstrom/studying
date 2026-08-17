@@ -33,7 +33,13 @@ async function gh(path, token, opts = {}) {
     const detail = await res.text().catch(() => '');
     const err = new Error(
       res.status === 401 ? 'That token was refused — it was revoked, or it never had the "gist" scope.'
+      /* The one everybody hits. GitHub's token page now leads with
+         fine-grained tokens, and fine-grained tokens cannot touch the Gists
+         API at all — no permission you can tick changes it. The answer is
+         always the same, so say it rather than reporting the number. */
+      : res.status === 403 ? 'GitHub refused that token. Fine-grained tokens cannot use gists — you need a classic token with the "gist" scope.'
       : res.status === 404 ? 'That gist could not be found on this account.'
+      : res.status === 429 ? 'GitHub is rate-limiting this token. Try again in a minute.'
       : `GitHub said ${res.status}.`
     );
     err.status = res.status;

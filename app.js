@@ -3622,10 +3622,21 @@ function setupSync() {
   $('#syncToken').value = cfg.token;
   syncState(cfg.on ? (state.settings.syncedAt ? 'Last synced ' + humanTime(state.settings.syncedAt) : 'Connected') : 'Not connected — this device only');
   on('#syncSave', 'click', async () => {
-    state.settings.syncToken = $('#syncToken').value.trim();
+    const token = $('#syncToken').value.trim();
+    if (!token) {
+      state.settings.syncToken = '';
+      writeNow();
+      syncState('Not connected — this device only');
+      return;
+    }
+    /* Say it before spending a round trip on a token that cannot work. */
+    if (token.startsWith('github_pat_')) {
+      syncState('That is a fine-grained token, which cannot use gists. Generate a classic one with the "gist" scope.', 'bad');
+      return;
+    }
+    state.settings.syncToken = token;
     state.settings.syncGist = '';
     writeNow();
-    if (!state.settings.syncToken) { syncState('Not connected — this device only'); return; }
     await runSync();
   });
   on('#syncNow', 'click', () => runSync());
