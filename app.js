@@ -24,6 +24,7 @@ const LEADER_ONE = (() => {
   }));
 })();
 import { KNOWLEDGE_CARDS } from './knowledge.js';
+import { UVU_CARDS } from './uvu.js';
 import { Globe, META, CENTRE } from './globe.js';
 import { AMBITION, chunkText, firstLetters, fadeText, gradeTyping, estimateAll, wordsIn } from './passages.js';
 import * as PLAN from './planner.js';
@@ -44,7 +45,8 @@ const MATH_DECK = 'deck-math';
 const WORLD_DECK = 'deck-world';
 const LEADERS_DECK = 'deck-leaders';
 const KNOWLEDGE_DECK = 'deck-knowledge';
-const SEED_VERSION = 10;   // bump whenever curriculum.js gains cards, or installs never see them
+const UVU_DECK = 'deck-uvu';
+const SEED_VERSION = 11;   // bump whenever curriculum.js gains cards, or installs never see them
 
 const DECK_COLORS = ['#6d8340', '#3f7d78', '#8a5a9e', '#b06a35', '#3f6ba8', '#a8496a', '#7a7f45', '#4a7f4f'];
 
@@ -2734,6 +2736,16 @@ function seed() {
     state.decks.push(world);
   }
   if (world && !world.daily) world.daily = 20;
+  let uvu = state.decks.find((d) => d.id === UVU_DECK);
+  if (!uvu && !removed.has(UVU_DECK)) {
+    uvu = { id: UVU_DECK, name: 'UVU Tour Guide', color: DECK_COLORS[5] || DECK_COLORS[0], kind: 'plain', created: new Date().toISOString() };
+    state.decks.push(uvu);
+  }
+  /* An exam with a date on it: bigger nightly dose, and in the guide's order
+     so a section can be drilled whole. */
+  if (uvu && !uvu.daily) uvu.daily = 20;
+  if (uvu) uvu.ordered = true;
+
   let know = state.decks.find((d) => d.id === KNOWLEDGE_DECK);
   if (!know && !removed.has(KNOWLEDGE_DECK)) {
     know = { id: KNOWLEDGE_DECK, name: 'Core Human Knowledge', color: DECK_COLORS[1], kind: 'plain', created: new Date().toISOString() };
@@ -2770,7 +2782,7 @@ function seed() {
       mathHave.add(key);
     });
 
-    for (const [deckId, list] of [[WORLD_DECK, [...COUNTRY_CARDS, ...LEADER_ONE]], [KNOWLEDGE_DECK, KNOWLEDGE_CARDS]]) {
+    for (const [deckId, list] of [[WORLD_DECK, [...COUNTRY_CARDS, ...LEADER_ONE]], [KNOWLEDGE_DECK, KNOWLEDGE_CARDS], [UVU_DECK, UVU_CARDS]]) {
       if (removed.has(deckId)) continue;
       const seen = existingFronts(deckId);
       [...list].reverse().forEach((c, revIdx) => {
