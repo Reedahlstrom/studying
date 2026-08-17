@@ -292,10 +292,33 @@ function mergeStates(mine, theirs) {
    payload. Stripped here rather than at the call site so there is exactly one
    place to get it wrong. */
 const NEVER_LEAVES = ['syncToken', 'syncGist', 'apiKey'];
+
+/* Anything shaped like a credential, wherever it turns up.
+
+   Stripping the fields we know about is not a guarantee — it is a promise to
+   remember. This once shipped pushing the whole state object, token included,
+   and GitHub revoked the token for us. So the last thing before anything
+   leaves is a look at the actual bytes: if a secret is in there, the push does
+   not happen, whatever field it is hiding in. */
+const SECRET_SHAPES = [
+  /ghp_[A-Za-z0-9]{16,}/,           // GitHub classic
+  /github_pat_[A-Za-z0-9_]{20,}/,   // GitHub fine-grained
+  /gho_[A-Za-z0-9]{16,}/,           // GitHub OAuth
+  /sk-ant-[A-Za-z0-9-]{16,}/,       // Anthropic
+];
+
 function forTheWire(s) {
   const settings = { ...(s.settings || {}) };
   for (const k of NEVER_LEAVES) delete settings[k];
-  return { ...s, settings };
+  const out = { ...s, settings };
+
+  const body = JSON.stringify(out);
+  for (const shape of SECRET_SHAPES) {
+    if (shape.test(body)) {
+      throw new Error('Refusing to sync: something that looks like a token is in the data. Nothing was sent.');
+    }
+  }
+  return out;
 }
 
 let pendingMerge = null;

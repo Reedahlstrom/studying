@@ -510,7 +510,7 @@ describe('Safety net');
    either of them did may go missing. */
 describe('Two devices');
 {
-  const wire = sandbox(['NEVER_LEAVES', 'forTheWire']);
+  const wire = sandbox(['NEVER_LEAVES', 'SECRET_SHAPES', 'forTheWire']);
 
   /* — the credential never leaves — */
   {
@@ -527,6 +527,27 @@ describe('Two devices');
     const body = JSON.stringify(sent);
     check('no credential anywhere in the payload',
       !body.includes('ghp_secret') && !body.includes('sk-ant-secret'));
+  }
+
+  /* — the backstop: a secret hiding somewhere nobody thought to strip — */
+  {
+    const hidden = (where) => {
+      try { wire.forTheWire(where); return 'sent'; } catch (e) { return 'refused'; }
+    };
+    eq('a token smuggled into a card is refused', hidden({
+      cards: [makeCard({ front: 'my token', back: 'ghp_abcdefghij0123456789abcdefghij' })],
+      decks: [], settings: {},
+    }), 'refused');
+    eq('a fine-grained token anywhere is refused', hidden({
+      cards: [], decks: [], settings: { note: 'github_pat_11ABCDEFG0123456789_abcdefgh' },
+    }), 'refused');
+    eq('an Anthropic key anywhere is refused', hidden({
+      cards: [], decks: [], settings: { scratch: 'sk-ant-api03-abcdefghijklmnop' },
+    }), 'refused');
+    eq('ordinary study material still goes', hidden({
+      cards: [makeCard({ front: 'What is a gist?', back: 'A small GitHub paste. ghp is not a token.' })],
+      decks: [], settings: { theme: 'dark' },
+    }), 'sent');
   }
 
   /* — a pull can never hand this device someone else's credential, nor
