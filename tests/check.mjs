@@ -93,6 +93,21 @@ console.log('\nCache');
   else if (!tags.length) fail('index.html does not version its assets');
   else if (tags.some((t) => t[2] !== v)) fail(`assets pinned to ${tags.map((t) => t[2]).join('/')} but the worker is v${v} — run tools/bump-assets.mjs`);
   else pass(`assets and worker agree on v${v}`);
+
+  /* Agreeing is not enough. If app.js changed but the version did not, the
+     service worker keeps serving the old copy and the deploy ships nothing —
+     which is indistinguishable from the change never having been made. */
+  try {
+    const { execFileSync } = await import('child_process');
+    const git = (args) => execFileSync('git', args, { cwd: ROOT, encoding: 'utf8' }).trim();
+    const changed = git(['diff', 'HEAD', '--name-only']).split('\n').filter(Boolean);
+    const codeChanged = changed.some((f) => /^(app|globe|sync|passages|planner)\.js$|^styles\.css$/.test(f));
+    if (codeChanged && !changed.includes('sw.js')) {
+      fail('app code changed but sw.js was not bumped — the worker will serve the old copy');
+    } else if (codeChanged) {
+      pass('code changed and the worker version was bumped with it');
+    }
+  } catch (_) { /* not a git checkout: nothing to compare against */ }
 }
 
 /* ── 4. the logic suite ─────────────────────────────────────── */
