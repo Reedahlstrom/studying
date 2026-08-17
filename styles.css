@@ -1270,3 +1270,8 @@ select { padding-right: 38px; cursor: pointer; }
   opacity: 0; transform-origin: 62px 60px;
   animation: unfurl .6s var(--spring) forwards;
 }
+
+/* sync setup */
+.sync-steps { margin: 0 0 12px 18px; padding: 0; display: grid; gap: 3px; }
+.sync-steps li { list-style: decimal; }
+.key-state.bad { color: var(--danger, #b4472f); }

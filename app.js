@@ -25,6 +25,7 @@ const LEADER_ONE = (() => {
 })();
 import { KNOWLEDGE_CARDS } from './knowledge.js';
 import { UVU_CARDS } from './uvu.js';
+import * as SYNC from './sync.js';
 import { Globe, META, CENTRE } from './globe.js';
 import { AMBITION, chunkText, firstLetters, fadeText, gradeTyping, estimateAll, wordsIn } from './passages.js';
 import * as PLAN from './planner.js';
@@ -1808,6 +1809,7 @@ function finishSession() {
   session = null;
   writeNow();
   applyPendingMerge();
+  syncAfterWork();
 }
 
 /* ───────────────────────── adding cards ───────────────────────── */
@@ -2887,6 +2889,7 @@ function boot() {
   safely('setupPlanner', setupPlanner);
   safely('setupGlobe', setupGlobe);
   safely('setupSettings', setupSettings);
+  safely('setupSync', setupSync);
   setEngine('local');
 
   $('#themeToggle').addEventListener('click', () => {
@@ -3297,9 +3300,85 @@ function finishGlobe() {
 function exitGlobe() {
   gsession = null;
   applyPendingMerge();
+  syncAfterWork();
   if (globe) globe.stop();
   go('deck');
 }
+
+/* ───────────────────────── sync ─────────────────────────
+   Pull, merge, push. Never replace: the copy that did more work on a card
+   wins, and ticks from both devices are kept. */
+let syncing = false;
+function syncState(text, kind) {
+  const el = $('#syncState');
+  if (el) { el.textContent = text; el.className = 'key-state' + (kind ? ' ' + kind : ''); }
+}
+
+async function runSync({ quiet = false } = {}) {
+  const cfg = SYNC.syncConfig(state.settings);
+  if (!cfg.on || syncing) return;
+  if (session || gsession) return;         // never swap state mid-session
+  syncing = true;
+  if (!quiet) syncState('Syncing…');
+  try {
+    const gist = await SYNC.ensureGist(cfg.token, cfg.gist);
+    if (gist !== state.settings.syncGist) { state.settings.syncGist = gist; }
+    const theirs = await SYNC.pull(cfg.token, gist);
+    if (theirs) {
+      state = hydrate(mergeStates(state, theirs));
+      groveSig = null;
+      if (current === 'today') renderToday();
+      else if (current === 'decks') renderDecks();
+      else if (current === 'deck') renderDeck();
+    }
+    writeNow();
+    await SYNC.push(cfg.token, gist, state);
+    state.settings.syncedAt = new Date().toISOString();
+    writeNow();
+    if (!quiet) syncState('Synced just now', 'ok');
+  } catch (e) {
+    syncState(e.message || 'Sync failed', 'bad');
+    if (!quiet) toast(e.message || 'Sync failed.', 'bad');
+  } finally { syncing = false; }
+}
+
+/* A push after study, so the other device sees it without being asked. */
+let syncSoon = null;
+function syncAfterWork() {
+  if (!SYNC.syncConfig(state.settings).on) return;
+  clearTimeout(syncSoon);
+  syncSoon = setTimeout(() => runSync({ quiet: true }), 4000);
+}
+
+function setupSync() {
+  const cfg = SYNC.syncConfig(state.settings);
+  $('#syncToken').value = cfg.token;
+  syncState(cfg.on ? (state.settings.syncedAt ? 'Last synced ' + humanTime(state.settings.syncedAt) : 'Connected') : 'Not connected — this device only');
+  on('#syncSave', 'click', async () => {
+    state.settings.syncToken = $('#syncToken').value.trim();
+    state.settings.syncGist = '';
+    writeNow();
+    if (!state.settings.syncToken) { syncState('Not connected — this device only'); return; }
+    await runSync();
+  });
+  on('#syncNow', 'click', () => runSync());
+  on('#syncClear', 'click', () => {
+    state.settings.syncToken = ''; state.settings.syncGist = ''; state.settings.syncedAt = null;
+    $('#syncToken').value = '';
+    writeNow();
+    syncState('Not connected — this device only');
+    toast('Sync turned off on this device.');
+  });
+  /* on open, and whenever you come back to the app */
+  if (cfg.on) runSync({ quiet: true });
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) runSync({ quiet: true }); });
+}
+
+const humanTime = (iso) => {
+  const mins = Math.round((Date.now() - new Date(iso)) / 60000);
+  return mins < 1 ? 'just now' : mins < 60 ? mins + ' min ago'
+    : mins < 1440 ? Math.round(mins / 60) + 'h ago' : Math.round(mins / 1440) + 'd ago';
+};
 
 function setupGlobe() {
   on('#globeLaunch', 'click', startGlobe);

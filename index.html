@@ -13,7 +13,7 @@
 <link rel="manifest" href="manifest.webmanifest" />
 <link rel="icon" href="icons/icon.svg" type="image/svg+xml" />
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
-<link rel="stylesheet" href="styles.css?v=32" />
+<link rel="stylesheet" href="styles.css?v=33" />
 </head>
 <body>
 
@@ -400,6 +400,28 @@ opportunity cost&#9;what you gave up"></textarea></label>
     </div>
 
     <div class="panel">
+      <div class="panel-head"><h2>Sync across your devices</h2></div>
+      <p class="hint" style="margin-bottom:10px">
+        Your phone and your computer each keep their own copy. Connect them and progress is
+        merged both ways — whichever device studied a card most recently wins, and ticks from
+        both are kept. Everything lives in one private gist on your own GitHub.
+      </p>
+      <ol class="hint sync-steps">
+        <li>Open <b>github.com/settings/tokens</b> → Generate new token (classic)</li>
+        <li>Tick only the <b>gist</b> scope, then generate</li>
+        <li>Paste it below on <b>each</b> device</li>
+      </ol>
+      <label class="field"><span>GitHub token</span>
+        <input id="syncToken" type="password" placeholder="ghp_…" autocomplete="off" /></label>
+      <p class="key-state" id="syncState">Not connected — this device only</p>
+      <div class="key-actions">
+        <button class="btn ghost" id="syncNow">Sync now</button>
+        <button class="btn ghost" id="syncClear">Disconnect</button>
+        <button class="btn primary" id="syncSave">Connect</button>
+      </div>
+    </div>
+
+    <div class="panel">
       <div class="panel-head"><h2>Your data</h2></div>
       <div class="row wrap">
         <button class="btn ghost" id="exportBtn">Export JSON</button>
@@ -539,6 +561,6 @@ opportunity cost&#9;what you gave up"></textarea></label>
 
 <div class="busy" id="busy" hidden><div class="spinner"></div><p id="busyText">Thinking…</p></div>
 
-<script src="app.js?v=32" type="module"></script>
+<script src="app.js?v=33" type="module"></script>
 </body>
 </html>
