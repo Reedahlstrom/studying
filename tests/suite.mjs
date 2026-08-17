@@ -562,6 +562,15 @@ describe('Two devices');
     eq('a remote token is never adopted', m.settings.syncToken, '');
     eq('nor a remote gist id', m.settings.syncGist, '');
     eq('nor a remote model key', m.settings.apiKey, '');
+
+    /* but another tab of this same browser is not another device */
+    const sameBrowser = sched.mergeStates(mine, theirs, { local: true });
+    eq('a token saved in another tab of this browser is picked up',
+      sameBrowser.settings.syncToken, 'ghp_theirs');
+    /* and this tab's own token still wins over a stale sibling */
+    const haveOne = { ...mine, settings: { ...mine.settings, syncToken: 'ghp_mine' } };
+    eq('a tab that already has one keeps it',
+      sched.mergeStates(haveOne, theirs, { local: true }).settings.syncToken, 'ghp_mine');
     eq('this device keeps its own settings', m.settings.theme, 'light');
   }
   {
@@ -758,6 +767,44 @@ describe('Independent seeding');
   };
   const healed = sched.mergeStates(messy, { ...phone, cards: [] });
   eq('an already-duplicated ledger collapses back down', healed.cards.length, 3);
+}
+
+
+
+/* ═══════════ 14 · Is that even a token? ═══════════
+   What got pasted in once was a line from a terminal prompt. It was stored,
+   and every request afterwards died inside fetch() complaining about code
+   points — accurate, and no help to anybody. */
+describe('Token check');
+{
+  const t = sandbox(['tokenProblem']);
+  const ok = (x) => t.tokenProblem(x) === null;
+  const why = (x) => t.tokenProblem(x) || '';
+
+  check('a classic token is accepted', ok('ghp_' + 'a1B2c3D4e5'.repeat(3) + 'abcdef'));
+  check('an old 40-character token is still accepted', ok('a'.repeat(40)));
+  check('an empty field is not an error, just not connected', ok(''));
+
+  /* the actual paste that broke it: a shell prompt line */
+  const prompt = '❯ [studying #99] git push origin main ';
+  check('a terminal prompt line is refused', !ok(prompt));
+  check('and says it is not a token', /not a token|spaces/i.test(why(prompt)), why(prompt));
+
+  check('anything with a space is refused', !ok('ghp_abc def'));
+  check('and says so plainly', /space/i.test(why('ghp_abc def')));
+
+  check('a smart quote or dash is refused', !ok('ghp_abc—def'));
+  check('a fine-grained token is refused', !ok('github_pat_' + 'A1b2'.repeat(20)));
+  check('and names the fix', /classic/i.test(why('github_pat_' + 'A1b2'.repeat(20))));
+  check('a url is refused', !ok('https://github.com/settings/tokens'));
+  check('the placeholder text is refused', !ok('ghp_...'));
+  check('a too-short token is refused', !ok('ghp_abc'));
+
+  /* every message has to tell you what to do next */
+  for (const bad of [prompt, 'ghp_abc def', 'ghp_...', 'https://github.com/settings/tokens']) {
+    check(`the message for ${JSON.stringify(bad.slice(0, 14))} is actionable`,
+      why(bad).length > 25 && /token/i.test(why(bad)), why(bad));
+  }
 }
 
 

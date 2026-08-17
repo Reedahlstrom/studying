@@ -120,5 +120,14 @@ console.log('\nLogic');
   if (r.status !== 0) failed++;
 }
 
+/* ── 5. the seam between the app and GitHub ─────────────────── */
+console.log('\nSync');
+{
+  const { spawnSync } = await import('child_process');
+  const r = spawnSync(process.execPath, [path.join(ROOT, 'tests/sync-suite.mjs')], { encoding: 'utf8' });
+  process.stdout.write(r.stdout.split('\n').filter((l) => /passed|✗|^  \d+\./.test(l)).join('\n') + '\n');
+  if (r.status !== 0) failed++;
+}
+
 console.log(failed ? `\n${failed} problem${failed > 1 ? 's' : ''} found.\n` : '\nAll clear. Now run the browser sweep: open the app with ?sweep=1\n');
 process.exit(failed ? 1 : 0);

@@ -240,7 +240,12 @@ highWater = state.cards.length;   // so an emptying bug is caught on its first w
 const identity = (c) =>
   c && c.front ? `${c.deckId}\u0000${String(c.front).trim().toLowerCase()}` : `id:${c && c.id}`;
 
-function mergeStates(mine, theirs) {
+/* `local` means the other copy is another tab of this same browser, not
+   another device. That distinction matters for credentials: a token must
+   never arrive from a gist, but a token saved in one tab has to be visible to
+   the tab sitting next to it — otherwise whichever tab renders next writes
+   its empty copy back over it. */
+function mergeStates(mine, theirs, { local = false } = {}) {
   const out = (theirs.rev || 0) > (mine.rev || 0) ? { ...theirs } : { ...mine };
 
   /* Cards are matched on what they are, not on their id.
@@ -317,7 +322,8 @@ function mergeStates(mine, theirs) {
   /* Credentials are this device's alone, in both directions: they are never
      pushed (see forTheWire) and a remote copy is never adopted. */
   for (const k of ['syncToken', 'syncGist', 'apiKey']) {
-    out.settings[k] = (mine.settings || {})[k] || '';
+    const ours = (mine.settings || {})[k] || '';
+    out.settings[k] = ours || (local ? (theirs.settings || {})[k] || '' : '');
   }
 
   out.rev = Math.max(mine.rev || 0, theirs.rev || 0);
@@ -372,7 +378,7 @@ function adoptExternalWrite(raw) {
        ones — grade one after that and the change lands on an orphan that
        nothing will ever save. It waits until the session is over. */
     if (session || gsession) { pendingMerge = raw; return; }
-    state = hydrate(mergeStates(state, incoming));
+    state = hydrate(mergeStates(state, incoming, { local: true }));
     lastBody = JSON.stringify(state);      // we are in step with storage now
     groveSig = null;
     if (current === 'today') renderToday();
@@ -3666,6 +3672,23 @@ async function caughtUp(ms = 2500) {
   await Promise.race([firstPull, new Promise((r) => setTimeout(r, ms))]);
 }
 
+/* Is this even a token?
+
+   What actually got pasted here once was a line from a terminal prompt. It
+   was stored, and every request then died inside fetch() with "String
+   contains non ISO-8859-1 code point" — true, and no use to anyone. A token
+   has a known shape, so say which part is wrong before spending a request on
+   it. */
+function tokenProblem(t) {
+  if (!t) return null;
+  if (/\s/.test(t)) return 'That has spaces in it — paste just the token, with nothing around it.';
+  if (/[^\x21-\x7e]/.test(t)) return 'That is not a token — it contains characters a token cannot. Copy just the token itself.';
+  if (t.startsWith('github_pat_')) return 'That is a fine-grained token, which cannot use gists. Generate a classic one with the "gist" scope.';
+  if (/^[0-9a-f]{40}$/.test(t)) return null;                 // the old format, still valid
+  if (!/^gh[pousr]_[A-Za-z0-9]{20,}$/.test(t)) return 'That does not look like a GitHub token. A classic one starts with ghp_ and is about 40 characters.';
+  return null;
+}
+
 function setupSync() {
   const cfg = SYNC.syncConfig(state.settings);
   $('#syncToken').value = cfg.token;
@@ -3679,10 +3702,8 @@ function setupSync() {
       return;
     }
     /* Say it before spending a round trip on a token that cannot work. */
-    if (token.startsWith('github_pat_')) {
-      syncState('That is a fine-grained token, which cannot use gists. Generate a classic one with the "gist" scope.', 'bad');
-      return;
-    }
+    const problem = tokenProblem(token);
+    if (problem) { syncState(problem, 'bad'); return; }
     state.settings.syncToken = token;
     state.settings.syncGist = '';
     writeNow();
@@ -3698,8 +3719,19 @@ function setupSync() {
     toast('Sync turned off on this device.');
   });
 
-  /* on open */
-  if (cfg.on) firstPull = runSync({ quiet: true });
+  /* Junk already stored from before this check existed would otherwise fail
+     on every load, for ever, with a message about code points. */
+  const stored = tokenProblem(cfg.token);
+  if (stored) {
+    state.settings.syncToken = '';
+    state.settings.syncGist = '';
+    writeNow({ silent: true });
+    $('#syncToken').value = '';
+    syncState(stored, 'bad');
+  } else if (cfg.on) {
+    /* on open */
+    firstPull = runSync({ quiet: true });
+  }
   /* whenever you come back to it */
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) return;
