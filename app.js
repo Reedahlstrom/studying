@@ -58,11 +58,12 @@ const dayKey = (d = new Date()) => {
 };
 const keyToDate = (k) => { const [y, m, d] = k.split('-').map(Number); return new Date(y, m - 1, d); };
 const daysBetween = (a, b) => Math.round((keyToDate(b) - keyToDate(a)) / 86400000);
+const shiftDay = (k, n) => { const d = keyToDate(k); d.setDate(d.getDate() + n); return dayKey(d); };
 
 /* ───────────────────────── state ───────────────────────── */
 const defaultState = () => ({
   decks: [], cards: [], passages: [], activeDeck: null,
-  habits: [], goals: [], log: {}, planted: [], removed: [],
+  habits: [], goals: [], log: {}, planted: [], removed: [], deletedCards: {},
   settings: { target: 15, theme: 'light', requeue: false, apiKey: '' },
   streak: { count: 0, last: null },
   daily: { day: null, count: 0 },
@@ -233,24 +234,63 @@ highWater = state.cards.length;   // so an emptying bug is caught on its first w
    done in this one — grade a card, and an older tab's save would replace the
    card with its own version before yours reached storage. Progress is merged
    instead, per card, keeping whichever side actually did more work. */
+/* What makes two cards the same card, on two devices that have never agreed
+   on an id. Used by the merge and by tombstones, so a deletion on one device
+   is recognised on the other. */
+const identity = (c) =>
+  c && c.front ? `${c.deckId}\u0000${String(c.front).trim().toLowerCase()}` : `id:${c && c.id}`;
+
 function mergeStates(mine, theirs) {
   const out = (theirs.rev || 0) > (mine.rev || 0) ? { ...theirs } : { ...mine };
 
-  /* cards: whichever copy was reviewed later, or has seen more, wins */
-  const byId = new Map(theirs.cards.map((c) => [c.id, c]));
+  /* Cards are matched on what they are, not on their id.
+
+     Each device builds its decks from the same curriculum files but hands out
+     a fresh random id to every card it creates. Two devices that seeded on
+     their own therefore share no ids at all, and matching by id turns a merge
+     into a duplication — every card twice, progress on neither. What is
+     actually stable across devices is the deck a card is in and the question
+     on its face, so that is the identity. */
   const rank = (c) => [c.lastReviewed || '', c.seen || 0, c.box || 0];
   const better = (a, b) => {
     const ra = rank(a), rb = rank(b);
     for (let i = 0; i < ra.length; i++) if (ra[i] !== rb[i]) return ra[i] > rb[i] ? a : b;
-    return a;
+    /* Nothing to choose between them, so choose the same one on both devices.
+       Picking "mine" on each side would leave them disagreeing about the id
+       for ever, and every sync would rewrite the gist to say so. */
+    return (a.id || '') <= (b.id || '') ? a : b;
   };
-  const merged = mine.cards.map((c) => {
-    const t = byId.get(c.id);
-    byId.delete(c.id);
-    return t ? better(c, t) : c;
-  });
-  for (const left of byId.values()) merged.push(left);   // cards only the other side has
-  out.cards = merged;
+
+  const byKey = new Map();
+  for (const c of theirs.cards) byKey.set(identity(c), c);
+
+  const merged = [];
+  const taken = new Set();
+  for (const c of mine.cards) {
+    const k = identity(c);
+    if (taken.has(k)) continue;          // a ledger already duplicated by an older merge
+    taken.add(k);
+    const t = byKey.get(k);
+    byKey.delete(k);
+    merged.push(t ? better(c, t) : c);
+  }
+  for (const left of byKey.values()) {   // cards only the other side has
+    const k = identity(left);
+    if (taken.has(k)) continue;
+    taken.add(k);
+    merged.push(left);
+  }
+
+  /* Deleting is a decision, and a decision has to travel. Merging is
+     otherwise pure union, so the device that never heard about a deletion
+     hands everything back on the next sync and the delete button appears not
+     to work. Both sides' decisions are kept, and applied to both sides. */
+  const gone = new Set([...(mine.removed || []), ...(theirs.removed || [])]);
+  const goneCards = { ...(theirs.deletedCards || {}), ...(mine.deletedCards || {}) };
+  out.removed = [...gone];
+  out.deletedCards = goneCards;
+  out.cards = merged.filter((c) => !gone.has(c.deckId) && !goneCards[identity(c)]);
+  out.decks = [...(out.decks || [])].filter((d) => !gone.has(d.id));
 
   /* a tick is a tick: union the day logs */
   out.log = { ...(theirs.log || {}) };
@@ -351,6 +391,12 @@ function hydrate(parsed) {
   s.habits = Array.isArray(parsed.habits) ? parsed.habits : [];
   s.goals = Array.isArray(parsed.goals) ? parsed.goals : [];
   s.log = parsed.log && typeof parsed.log === 'object' ? parsed.log : {};
+  s.removed = Array.isArray(parsed.removed) ? parsed.removed : [];
+  /* Tombstones. Pruned after six months: by then every device has long since
+     applied the deletion, and keeping them for ever would grow without end. */
+  const cutoff = shiftDay(dayKey(), -180);
+  const tombs = parsed.deletedCards && typeof parsed.deletedCards === 'object' ? parsed.deletedCards : {};
+  s.deletedCards = Object.fromEntries(Object.entries(tombs).filter(([, when]) => String(when) >= cutoff));
   return s;
 }
 
@@ -2512,6 +2558,9 @@ function setupModals() {
   $('#eDelete').addEventListener('click', () => {
     const el = $(`.mini[data-id="${editingId}"]`);
     state.cards = state.cards.filter((c) => c.id !== editingId);
+    /* Remember it, or the other device hands it straight back. */
+    const doomed = state.cards.find((c) => c.id === editingId) || { id: editingId };
+    state.deletedCards = { ...(state.deletedCards || {}), [identity(doomed)]: dayKey() };
     save(); closeEdit();
     if (el) { el.classList.add('removing'); setTimeout(renderBrowse, 330); } else renderBrowse();
     toast('Card deleted.');

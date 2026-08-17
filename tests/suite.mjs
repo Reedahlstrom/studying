@@ -9,7 +9,7 @@ const BOX1_LIMIT = 30;
 /* The real scheduling functions, lifted from app.js and given a fake clock. */
 const day = { now: '2026-08-17' };
 const sched = sandbox(
-  ['isDue', 'isNew', 'isReview', 'inBox', 'box1Load', 'grade', 'mergeStates'],
+  ['isDue', 'isNew', 'isReview', 'inBox', 'box1Load', 'grade', 'identity', 'mergeStates'],
   `const INTERVALS = ${JSON.stringify(INTERVALS)};
    const BOX_COUNT = ${BOX_COUNT};
    const BOX1_LIMIT = ${BOX1_LIMIT};
@@ -100,7 +100,10 @@ describe('Session building');
 /* ═══════════ 3 · Merging two devices ═══════════ */
 describe('Merging');
 {
-  const card = (id, last, seen, box) => makeCard({ id, lastReviewed: last, seen, box });
+  /* distinct fronts: cards are matched on what they say, so a test that
+     gives them all the same text is testing one card four times */
+  const card = (id, last, seen, box) =>
+    makeCard({ id, front: 'question ' + id, lastReviewed: last, seen, box });
   const phone = {
     rev: 5,
     cards: [card('a', '2026-08-17', 3, 3), card('b', '2026-08-15', 1, 1), card('only-phone', '2026-08-17', 1, 2)],
@@ -391,7 +394,7 @@ describe('Safety net');
 
   const ledger = (n, studied) => JSON.stringify({
     rev: 4, decks: [{ id: 'biz' }],
-    cards: Array.from({ length: n }, (_, i) => ({ id: 'c' + i, lastReviewed: i < studied ? day.now : null })),
+    cards: Array.from({ length: n }, (_, i) => ({ id: 'c' + i, front: 'q' + i, deckId: 'biz', lastReviewed: i < studied ? day.now : null })),
   });
 
   /* — a normal load takes a backup — */
@@ -573,7 +576,7 @@ describe('Two devices');
   {
     const DECK = 60;
     const seed = () => Array.from({ length: DECK }, (_, i) =>
-      makeCard({ id: 'c' + i, deckId: 'biz', box: 1, seen: 0, lastReviewed: null }));
+      makeCard({ id: 'c' + i, front: 'question ' + i, deckId: 'biz', box: 1, seen: 0, lastReviewed: null }));
 
     let gist = { cards: seed(), decks: [], log: {}, daily: {}, rev: 0, settings: {} };
     const clone = (o) => JSON.parse(JSON.stringify(o));
@@ -637,16 +640,124 @@ describe('Two devices');
   {
     const old = {
       rev: 2, decks: [], log: {}, daily: {}, settings: {},
-      cards: [makeCard({ id: 'a', seen: 0, lastReviewed: null, box: 1 })],
+      cards: [makeCard({ id: 'a', front: 'q-a', seen: 0, lastReviewed: null, box: 1 })],
     };
     const current = {
       rev: 200, decks: [], log: {}, daily: {}, settings: {},
-      cards: [makeCard({ id: 'a', seen: 9, lastReviewed: '2026-08-16', box: 4 })],
+      cards: [makeCard({ id: 'a', front: 'q-a', seen: 9, lastReviewed: '2026-08-16', box: 4 })],
     };
     const m = sched.mergeStates(old, current);
     eq('a stale device adopts the newer work rather than erasing it', m.cards[0].seen, 9);
     eq('and does not drag the box back', m.cards[0].box, 4);
   }
+}
+
+
+
+/* ═══════════ 12 · Deleting things, on two devices ═══════════
+   Deleting is a decision, and a decision has to travel. Otherwise the other
+   device quietly puts it all back the next time they meet. */
+describe('Deleting');
+{
+  const deck = (id) => ({ id, name: id });
+  const withDeck = (id, n, over = {}) => ({
+    rev: 1, log: {}, daily: {}, settings: {},
+    decks: [deck('keep'), deck(id)],
+    cards: [
+      makeCard({ id: 'k1', deckId: 'keep', front: 'keeper' }),
+      ...Array.from({ length: n }, (_, i) => makeCard({ id: `${id}-${i}`, deckId: id, front: `${id} q${i}` })),
+    ],
+    ...over,
+  });
+
+  /* — a deleted deck must not come back — */
+  {
+    const gone = { ...withDeck('doomed', 0), decks: [deck('keep')], removed: ['doomed'], rev: 2 };
+    const stale = withDeck('doomed', 3, { rev: 9 });          // never heard about the deletion
+    const m = sched.mergeStates(gone, stale);
+    eq('the deleted deck stays deleted', m.decks.filter((d) => d.id === 'doomed').length, 0);
+    eq('and its cards do not come back', m.cards.filter((c) => c.deckId === 'doomed').length, 0);
+    eq('the deck you kept is untouched', m.decks.filter((d) => d.id === 'keep').length, 1);
+    check('the decision is remembered for next time', (m.removed || []).includes('doomed'));
+  }
+
+  /* — and the other way round: the stale device learns about it — */
+  {
+    const gone = { ...withDeck('doomed', 0), decks: [deck('keep')], removed: ['doomed'], rev: 2 };
+    const stale = withDeck('doomed', 3, { rev: 9 });
+    const m = sched.mergeStates(stale, gone);                  // stale device pulls
+    eq('a device that missed the deletion applies it', m.cards.filter((c) => c.deckId === 'doomed').length, 0);
+    check('and remembers it', (m.removed || []).includes('doomed'));
+  }
+
+  /* — a single deleted card must not come back either — */
+  {
+    const mine = {
+      rev: 2, decks: [deck('keep')], log: {}, daily: {}, settings: {},
+      cards: [makeCard({ id: 'k1', deckId: 'keep', front: 'keeper' })],
+      deletedCards: { 'keep\u0000doomed card': '2026-08-17' },
+    };
+    const theirs = {
+      rev: 40, decks: [deck('keep')], log: {}, daily: {}, settings: {},
+      cards: [makeCard({ id: 'k1', deckId: 'keep', front: 'keeper' }), makeCard({ id: 'gone1', deckId: 'keep', front: 'Doomed card', seen: 3 })],
+    };
+    const m = sched.mergeStates(mine, theirs);
+    eq('a deleted card stays deleted', m.cards.filter((c) => c.id === 'gone1').length, 0);
+    eq('the rest of the deck is fine', m.cards.length, 1);
+  }
+
+  /* — deletions from both sides both stick — */
+  {
+    const a = { rev: 2, decks: [deck('keep')], cards: [], log: {}, daily: {}, settings: {}, removed: ['x'] };
+    const b = { rev: 3, decks: [deck('keep')], cards: [], log: {}, daily: {}, settings: {}, removed: ['y'] };
+    const m = sched.mergeStates(a, b);
+    eq('both deletions survive the merge', (m.removed || []).slice().sort(), ['x', 'y']);
+  }
+}
+
+
+
+/* ═══════════ 13 · Two devices that seeded on their own ═══════════
+   Each device builds its own deck from the same curriculum files. If the
+   cards do not come out with the same identity on both, merging them is not
+   a merge — it is a duplication. */
+describe('Independent seeding');
+{
+  const seedOn = (device) => ({
+    rev: 1, decks: [{ id: 'biz' }], log: {}, daily: {}, settings: {}, removed: [], deletedCards: {},
+    /* the same three curriculum cards, seeded separately on each device */
+    cards: [
+      makeCard({ id: device + '-1', deckId: 'biz', front: 'What is gross margin?', back: 'Revenue minus COGS' }),
+      makeCard({ id: device + '-2', deckId: 'biz', front: 'What is churn?', back: 'Customers lost over a period' }),
+      makeCard({ id: device + '-3', deckId: 'biz', front: 'What is CAC?', back: 'Cost to acquire a customer' }),
+    ],
+  });
+
+  const phone = seedOn('p');
+  const laptop = seedOn('l');
+  laptop.cards[0].seen = 4; laptop.cards[0].lastReviewed = '2026-08-17'; laptop.cards[0].box = 3;
+
+  const m = sched.mergeStates(phone, laptop);
+  eq('the same card seeded on two devices is one card, not two', m.cards.length, 3);
+  const margin = m.cards.filter((c) => c.front === 'What is gross margin?');
+  eq('and there is exactly one of it', margin.length, 1);
+  eq('carrying the progress from whichever device studied it', margin[0].seen, 4);
+  eq('and its box', margin[0].box, 3);
+
+  /* a card genuinely only one device has still arrives */
+  const withExtra = sched.mergeStates(phone, {
+    ...laptop,
+    cards: [...laptop.cards, makeCard({ id: 'l-9', deckId: 'biz', front: 'What is ARR?', back: 'Annual recurring revenue' })],
+  });
+  eq('a genuinely new card still comes across', withExtra.cards.length, 4);
+
+  /* and a ledger already duplicated by an earlier merge heals itself */
+  const messy = {
+    ...phone,
+    cards: [...phone.cards, ...laptop.cards],      // what the old merge produced
+  };
+  const healed = sched.mergeStates(messy, { ...phone, cards: [] });
+  eq('an already-duplicated ledger collapses back down', healed.cards.length, 3);
 }
 
 
