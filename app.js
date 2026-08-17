@@ -125,7 +125,109 @@ function publishStatus() {
   } catch (_) { /* storage full — the gate simply stays shut */ }
 }
 
+/* ───────────────────────── the safety net ─────────────────────────
+
+   Everything you have ever studied lives in one localStorage key. A few
+   things can empty it: a write interrupted half way, a browser reclaiming
+   space, a bug in here. Those will happen again. What must never happen
+   again is the app answering any of them by quietly starting over — that is
+   what turns a recoverable glitch into a morning's work gone.
+
+   So: keep a few dated copies, never write an empty ledger over a full one,
+   and if the live copy is ever unreadable, set it aside rather than discard
+   it. Losing data should take deliberate effort. */
+
+const BAK_KEYS = ['ledger.bak1', 'ledger.bak2', 'ledger.bak3'];
+const BAK_DAY = 'ledger.bakday';
+let bootNotice = null;         // shown once the UI exists to show it
+
+const usable = (s) => !!s && Array.isArray(s.cards) && Array.isArray(s.decks);
+
+function readSnapshot(key) {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return usable(parsed) ? parsed : null;
+  } catch (_) { return null; }
+}
+
+/* How much work a copy represents — what we would be sorry to lose. Cards you
+   have actually studied outweigh everything else, because they are the only
+   part that cannot be rebuilt from the curriculum. */
+function weight(s) {
+  if (!usable(s)) return -1;
+  const studied = s.cards.filter((c) => c.lastReviewed).length;
+  return studied * 10000 + s.cards.length + (s.rev || 0);
+}
+
+/* One copy a day, three days deep. Enough to walk back past a bad morning
+   without spending much of the storage budget. */
+function rotateBackup(raw, force = false) {
+  try {
+    if (!force && localStorage.getItem(BAK_DAY) === dayKey() && localStorage.getItem(BAK_KEYS[0])) return;
+    for (let i = BAK_KEYS.length - 1; i > 0; i--) {
+      const prev = localStorage.getItem(BAK_KEYS[i - 1]);
+      if (prev) localStorage.setItem(BAK_KEYS[i], prev);
+    }
+    localStorage.setItem(BAK_KEYS[0], raw);
+    localStorage.setItem(BAK_DAY, dayKey());
+  } catch (_) { /* out of room: the live copy matters more than its backup */ }
+}
+
+/* The best of whatever survived. */
+function recover() {
+  const found = BAK_KEYS.map(readSnapshot).filter(Boolean);
+  if (!found.length) return null;
+  return found.sort((a, b) => weight(b) - weight(a))[0];
+}
+
+/* Unreadable data is kept, not deleted — it may still be recoverable by hand,
+   and it is the only evidence of what went wrong. Only the latest is kept, so
+   this can never be what fills the quota. */
+function quarantine(raw) {
+  try {
+    for (const k of Object.keys(localStorage)) if (k.startsWith('ledger.broken.')) localStorage.removeItem(k);
+    localStorage.setItem('ledger.broken.' + Date.now(), raw);
+  } catch (_) { /* nothing to be done */ }
+}
+
+function load() {
+  let raw = null;
+  try { raw = localStorage.getItem(STORE_KEY); } catch (_) { /* storage blocked */ }
+
+  if (raw) {
+    let parsed = null;
+    try { parsed = JSON.parse(raw); } catch (_) { /* handled below */ }
+    if (usable(parsed)) { rotateBackup(raw); return hydrate(parsed); }
+    quarantine(raw);
+    const back = recover();
+    if (back) {
+      bootNotice = 'That save was damaged — restored your last backup.';
+      return hydrate(back);
+    }
+    bootNotice = 'That save could not be read. Nothing was deleted.';
+    return defaultState();
+  }
+
+  /* The key is gone but our own backups are not. That is a wipe, not a first
+     run, and starting fresh would be exactly the wrong answer. */
+  const back = recover();
+  if (back) {
+    bootNotice = 'Your data went missing — restored from backup.';
+    return hydrate(back);
+  }
+  try {
+    const legacy = localStorage.getItem(LEGACY_KEY);
+    if (legacy) return migrateV1(JSON.parse(legacy));
+  } catch (_) { /* nothing worth keeping */ }
+  return defaultState();
+}
+
+let highWater = 0;      // the most cards we have ever held in this session
+let resetting = false;  // the one legitimate way to end up holding nothing
 let state = load();
+highWater = state.cards.length;   // so an emptying bug is caught on its first write
 
 /* Another tab wrote. Taking its copy wholesale destroys whatever you have just
    done in this one — grade a card, and an older tab's save would replace the
@@ -188,19 +290,6 @@ function adoptExternalWrite(raw) {
   } catch (_) { /* a half-written value: the next write will settle it */ }
 }
 
-function load() {
-  try {
-    const raw = localStorage.getItem(STORE_KEY);
-    if (raw) return hydrate(JSON.parse(raw));
-    const legacy = localStorage.getItem(LEGACY_KEY);
-    if (legacy) return migrateV1(JSON.parse(legacy));
-    return defaultState();
-  } catch (e) {
-    console.warn('Load failed; starting fresh.', e);
-    return defaultState();
-  }
-}
-
 function hydrate(parsed) {
   const s = { ...defaultState(), ...parsed };
   s.settings = { ...defaultState().settings, ...(parsed.settings || {}) };
@@ -261,6 +350,16 @@ function writeNow() {
      the other, which renders, which writes. */
   const body = JSON.stringify(state);
   if (body === lastBody) return;
+
+  /* A write is the only way data is lost, so this is the place to stop it.
+     If we are holding nothing and we were holding something a moment ago,
+     the bug is upstream and this write is the damage — drop it. */
+  const held = (state.cards || []).length;
+  if (held === 0 && highWater > 0 && !resetting) {
+    console.warn(`Refused to save an empty ledger over ${highWater} cards.`);
+    return;
+  }
+  highWater = Math.max(highWater, held);
   lastBody = body;
   /* Stamp every write. A second tab of this app, opened hours ago, holds an
      old copy of everything in memory — and the moment it renders anything it
@@ -2701,10 +2800,17 @@ function setupSettings() {
   });
   $('#resetBtn').addEventListener('click', () => {
     if (!confirm('Delete every deck and card, and reset all progress? This cannot be undone.')) return;
+    /* Take a copy first: a mis-tap here should still be walkable-back. */
+    try { rotateBackup(localStorage.getItem(STORE_KEY) || '', true); } catch (_) {}
     const key = state.settings.apiKey;
+    resetting = true;
     state = defaultState();
     state.settings.apiKey = key;
-    seed(); save(); go('decks'); toast('Everything cleared.');
+    highWater = 0;
+    seed();
+    writeNow();
+    resetting = false;
+    go('decks'); toast('Everything cleared.');
   });
 }
 
@@ -2891,6 +2997,21 @@ function boot() {
   safely('setupSettings', setupSettings);
   safely('setupSync', setupSync);
   setEngine('local');
+  /* Say so out loud if the ledger had to be rescued — silence is how a
+     restore turns into a second, quieter loss. */
+  if (bootNotice) {
+    const notice = bootNotice;        // read it now: the timer fires long after
+    bootNotice = null;
+    setTimeout(() => toast(notice, 'bad'), 400);
+  }
+
+  /* ?sweep=1 drives the whole interface and reports what it found. It takes a
+     copy of your ledger first and puts it back after. */
+  if (/[?&]sweep=1/.test(location.search)) {
+    import('./tests/ui-sweep.js')
+      .then((m) => setTimeout(() => m.runSweep(), 700))
+      .catch((e) => console.warn('sweep did not load', e));
+  }
 
   $('#themeToggle').addEventListener('click', () => {
     state.settings.theme = state.settings.theme === 'dark' ? 'light' : 'dark';

@@ -79,6 +79,13 @@ Everything is stored in `localStorage` under the key `ledger.v1`, in that browse
 It is not synced between your phone and computer. Use **Settings → Export JSON** to back up
 and **Import JSON** to merge a backup into another device (imports de-duplicate by front+back).
 
+### If it ever goes missing
+
+The ledger keeps three dated backups of itself. On startup, if the live copy is unreadable or
+gone, the best backup is restored automatically and the app says so out loud — a silent restore
+would just be a quieter kind of loss. The damaged copy is kept under `ledger.broken.*` rather
+than deleted, and a write that would leave you with nothing is refused.
+
 ## Development
 
 No toolchain. Edit the files and serve the folder:
@@ -94,5 +101,29 @@ python3 -m http.server 8080   # then open http://localhost:8080
 | `app.js` | state, Leitner scheduling, rendering, session loop |
 | `sw.js` | offline cache (bump `VERSION` when shipping changes) |
 | `manifest.webmanifest`, `icons/` | PWA install metadata |
+
+### Testing
+
+```bash
+node tests/check.mjs      # modules load, no view can cover the app, cache
+                          # versions agree, and the full logic suite
+```
+
+Then the interface, which only fails in a browser — open the app with `?sweep=1`:
+
+```
+http://localhost:8080/index.html?sweep=1
+```
+
+It drives every view, modal, keyboard shortcut, a real study session, the globe and deck
+deletion, then reports in the corner. It takes a copy of your ledger before it starts and puts
+it back when it finishes, including when it fails.
+
+| File | What it checks |
+|------|----------------|
+| `tests/check.mjs` | the whole no-browser run, in one command |
+| `tests/suite.mjs` | Leitner scheduling, session building, merging two devices, memorising, the safety net |
+| `tests/harness.mjs` | lifts functions straight out of `app.js` so the tests run the shipping code |
+| `tests/ui-sweep.js` | the interface, driven in a real browser |
 
 Deploying = pushing to `main` with GitHub Pages serving the repo root.
