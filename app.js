@@ -3531,8 +3531,23 @@ async function runSync({ quiet = false, pushOnly = false } = {}) {
     syncState('Synced just now', 'ok');
     syncHealth();
   } catch (e) {
-    syncState(e.message || 'Sync failed', 'bad');
-    if (!quiet) toast(e.message || 'Sync failed.', 'bad');
+    /* A refused token is not a bad moment, it is a dead credential — revoked
+       on GitHub, or never given the scope. Keeping it means failing the same
+       way on every load for ever, with no hint that the fix is to replace it.
+       Deleting a token on GitHub does not reach into this device, so the app
+       has to notice on its own. */
+    if (e.status === 401) {
+      state.settings.syncToken = '';
+      state.settings.syncGist = '';
+      writeNow({ silent: true });
+      const field = $('#syncToken');
+      if (field) field.value = '';
+      syncState('That token no longer works — cleared. Paste a new one.', 'bad');
+      toast('Your sync token was refused, so it has been cleared. Paste a new one.', 'bad');
+    } else {
+      syncState(e.message || 'Sync failed', 'bad');
+      if (!quiet) toast(e.message || 'Sync failed.', 'bad');
+    }
     syncHealth();
   } finally {
     syncing = false;

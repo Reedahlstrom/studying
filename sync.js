@@ -32,7 +32,7 @@ async function gh(path, token, opts = {}) {
   if (!res.ok) {
     const detail = await res.text().catch(() => '');
     const err = new Error(
-      res.status === 401 ? 'That token was refused. Check it has the "gist" scope.'
+      res.status === 401 ? 'That token was refused — it was revoked, or it never had the "gist" scope.'
       : res.status === 404 ? 'That gist could not be found on this account.'
       : `GitHub said ${res.status}.`
     );
