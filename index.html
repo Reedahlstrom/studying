@@ -13,7 +13,7 @@
 <link rel="manifest" href="manifest.webmanifest" />
 <link rel="icon" href="icons/icon.svg" type="image/svg+xml" />
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
-<link rel="stylesheet" href="styles.css?v=41" />
+<link rel="stylesheet" href="styles.css?v=42" />
 </head>
 <body>
 
@@ -79,6 +79,10 @@
       <p class="eyebrow" id="greeting">Welcome back</p>
       <h1 class="due-count"><span id="dueBig">0</span><small id="dueWord">cards due</small></h1>
       <p class="sub" id="heroSub">across all your decks</p>
+      <!-- The state of sync, on the screen you actually look at. It used to
+           live only on Goals, so a device that was not syncing looked
+           completely normal from here. -->
+      <button class="sync-pill" id="syncPill" hidden></button>
     </div>
 
     <div class="deck-grid" id="deckGrid"></div>
@@ -421,6 +425,9 @@ opportunity cost&#9;what you gave up"></textarea></label>
       <label class="field"><span>GitHub token</span>
         <input id="syncToken" type="password" placeholder="ghp_…" autocomplete="off" /></label>
       <p class="key-state" id="syncState">Not connected — this device only</p>
+      <!-- The facts, so two devices can be compared in five seconds instead
+           of guessed at. If the gist ids differ, they are not talking. -->
+      <dl class="sync-facts" id="syncFacts" hidden></dl>
       <div class="key-actions">
         <button class="btn ghost" id="syncNow">Sync now</button>
         <button class="btn ghost" id="syncClear">Disconnect</button>
@@ -582,6 +589,6 @@ opportunity cost&#9;what you gave up"></textarea></label>
 
 <div class="busy" id="busy" hidden><div class="spinner"></div><p id="busyText">Thinking…</p></div>
 
-<script src="app.js?v=41" type="module"></script>
+<script src="app.js?v=42" type="module"></script>
 </body>
 </html>

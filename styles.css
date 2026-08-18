@@ -1312,3 +1312,41 @@ select { padding-right: 38px; cursor: pointer; }
 .done-sync { margin: 8px 0 0; font-size: 13px; opacity: .75; text-wrap: pretty; }
 .done-sync.ok  { color: var(--olive); opacity: 1; }
 .done-sync.bad { color: var(--red); opacity: 1; font-weight: 600; }
+
+/* The sync line on the deck screen. Quiet when everything is fine, and
+   impossible to miss when your work is not leaving the device. */
+.sync-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  background: color-mix(in srgb, var(--olive) 12%, transparent);
+  color: color-mix(in srgb, var(--olive) 80%, var(--ink));
+}
+.sync-pill.ok::before { content: '✓'; }
+.sync-pill.bad {
+  background: color-mix(in srgb, var(--red) 14%, transparent);
+  border-color: color-mix(in srgb, var(--red) 45%, transparent);
+  color: var(--red);
+}
+.sync-pill.bad::before { content: '!'; font-weight: 800; }
+
+/* The facts about this device's sync, laid out so two phones can be held side
+   by side and compared without interpretation. */
+.sync-facts {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 3px 14px;
+  margin: 10px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.sync-facts dt { opacity: .6; }
+.sync-facts dd { margin: 0; font-variant-numeric: tabular-nums; word-break: break-all; }

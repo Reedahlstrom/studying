@@ -1288,6 +1288,7 @@ function deckLeftTonight(d, today) {
   return Math.max(0, Math.min(waiting, sessionSize(d) - reviewedInDeckToday(d.id, today)));
 }
 function renderDecks() {
+  syncPill();
   const today = dayKey();
   releaseDailyLines();
   const dueAll = state.cards.filter((c) => isDue(c, today));
@@ -3671,6 +3672,8 @@ function exitGlobe() {
    wins, and ticks from both devices are kept. */
 let syncing = false;
 let remoteVersion = null;      // the stamp the gist carried when we last looked
+let retryTimer = null;
+let retryAttempt = 0;
 let firstPull = null;          // resolves once this device has caught up
 let lastGood = 0;              // when a sync last actually worked
 
@@ -3702,22 +3705,45 @@ async function runSync({ quiet = false, pushOnly = false } = {}) {
 
     /* Look again right before writing. If the other device wrote while we
        were working, take its work in first — never flatten it. */
-    for (let attempt = 0; attempt < 3; attempt++) {
+    /* What we are going to send. Usually this device's state — but when the
+       other device wrote while we were mid-session we cannot adopt its copy
+       (the session is holding card objects that a merge would replace), and
+       we must not send ours over the top of its work either. So the merge
+       happens for the wire only: the payload carries both, and the live state
+       catches up when the session ends. */
+    let payload = state;
+    let pushed = false;
+
+    for (let attempt = 0; attempt < 4; attempt++) {
       const now = await SYNC.version(cfg.token, gist);
       if (now && remoteVersion && now !== remoteVersion) {
         const { state: theirs, version } = await SYNC.pull(cfg.token, gist);
         remoteVersion = version;
-        if (theirs && canMerge) adoptRemote(fromTheWire(theirs));
-        else if (theirs) { pendingRemote = fromTheWire(theirs); }   // mid-session: hold it
+        const incoming = theirs && fromTheWire(theirs);
+        if (incoming) {
+          if (canMerge) { adoptRemote(incoming); payload = state; }
+          else {
+            pendingRemote = pendingRemote ? mergeStates(pendingRemote, incoming) : incoming;
+            payload = mergeStates(state, incoming);
+          }
+        }
         continue;
       }
       writeNow({ silent: true });
-      remoteVersion = await SYNC.push(cfg.token, gist, forTheWire(state));
+      remoteVersion = await SYNC.push(cfg.token, gist, forTheWire(payload));
+      pushed = true;
       break;
     }
 
+    /* Falling out of that loop without writing used to be reported as a
+       successful sync. It is the worst possible outcome: the work is still
+       only here, and the app has just said it is safe. */
+    if (!pushed) throw new Error('Could not save — another device kept changing the file. Trying again shortly.');
+
     state.settings.syncedAt = new Date().toISOString();
     lastGood = Date.now();
+    retryAttempt = 0;
+    clearTimeout(retryTimer);
     writeNow({ silent: true });
     syncState('Synced just now', 'ok');
     syncHealth();
@@ -3738,6 +3764,11 @@ async function runSync({ quiet = false, pushOnly = false } = {}) {
     } else {
       syncState(e.message || 'Sync failed', 'bad');
       if (!quiet) toast(e.message || 'Sync failed.', 'bad');
+      /* Work that has not left the device is the whole problem, so a failure
+         schedules its own retry rather than waiting for you to do something. */
+      clearTimeout(retryTimer);
+      retryAttempt = Math.min(retryAttempt + 1, 5);
+      retryTimer = setTimeout(() => runSync({ quiet: true }), 2000 * 2 ** (retryAttempt - 1));
     }
     syncHealth();
   } finally {
@@ -3793,6 +3824,8 @@ function syncAfterWork() {
    the way it looks when everything is fine. Off is the loudest case now, not
    the quiet one. */
 function syncHealth() {
+  syncPill();
+  syncFacts();
   const el = $('#syncHealth');
   if (!el) return;
   const cfg = SYNC.syncConfig(state.settings);
@@ -3839,6 +3872,56 @@ function tokenProblem(t) {
   if (/^[0-9a-f]{40}$/.test(t)) return null;                 // the old format, still valid
   if (!/^gh[pousr]_[A-Za-z0-9]{20,}$/.test(t)) return 'That does not look like a GitHub token. A classic one starts with ghp_ and is about 40 characters.';
   return null;
+}
+
+/* Everything needed to tell why two devices disagree, in plain words. The
+   gist id is the one that matters most: two devices pointing at different
+   gists will each work perfectly and never meet. */
+function syncFacts() {
+  const el = $('#syncFacts');
+  if (!el) return;
+  const cfg = SYNC.syncConfig(state.settings);
+  const at = lastGood || Date.parse(state.settings.syncedAt || 0) || 0;
+  const studiedToday = state.cards.filter((c) => c.lastReviewed === dayKey()).length;
+  const rows = [
+    ['Connected', cfg.on ? 'yes' : 'NO — work stays on this device'],
+    ['Shared file', state.settings.syncGist || '—'],
+    ['Last synced', at ? humanTime(new Date(at).toISOString()) : 'never'],
+    ['Cards here', String(state.cards.length)],
+    ['Studied today', String(studiedToday)],
+    ['Decks', state.decks.map((d) => d.name).join(', ') || '—'],
+  ];
+  el.hidden = false;
+  el.innerHTML = rows.map(([k, v]) => `<dt>${k}</dt><dd>${esc(String(v))}</dd>`).join('');
+}
+
+/* One line, always on the deck screen, saying whether what you are about to
+   do will leave this device. Green and quiet when it is fine; loud when it is
+   not. Both screenshots of the problem were of this screen, and neither
+   showed a thing. */
+function syncPill() {
+  const el = $('#syncPill');
+  if (!el) return;
+  const cfg = SYNC.syncConfig(state.settings);
+  const at = lastGood || Date.parse(state.settings.syncedAt || 0) || 0;
+
+  if (!cfg.on) {
+    el.hidden = false;
+    el.className = 'sync-pill bad';
+    el.textContent = 'Not syncing — this device only. Tap to fix.';
+  } else if (!at) {
+    el.hidden = false;
+    el.className = 'sync-pill bad';
+    el.textContent = 'Never finished a sync. Tap to fix.';
+  } else if (Date.now() - at > 15 * 60 * 1000) {
+    el.hidden = false;
+    el.className = 'sync-pill bad';
+    el.textContent = `Last synced ${humanTime(new Date(at).toISOString())}. Tap to retry.`;
+  } else {
+    el.hidden = false;
+    el.className = 'sync-pill ok';
+    el.textContent = `Synced ${humanTime(new Date(at).toISOString())}`;
+  }
 }
 
 /* Resolves true when it is fine to start studying: either this device syncs,
@@ -3892,6 +3975,11 @@ function setupSync() {
     await runSync();
   });
   on('#syncNow', 'click', () => runSync());
+  on('#syncPill', 'click', () => {
+    if (SYNC.syncConfig(state.settings).on) { runSync(); return; }
+    go('more');
+    setTimeout(() => { const f = $('#syncToken'); if (f) f.focus(); }, 250);
+  });
   on('#syncClear', 'click', () => {
     state.settings.syncToken = ''; state.settings.syncGist = ''; state.settings.syncedAt = null;
     $('#syncToken').value = '';

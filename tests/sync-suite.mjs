@@ -152,4 +152,65 @@ describe('Two devices racing');
   check('the stamp moving is detectable', now !== before, `${before} vs ${now}`);
 }
 
+/* ═══════════ never claim a sync that did not happen ═══════════
+   Device B reported "Synced just now" while the shared file never received a
+   single one of its cards. The retry loop gave up when the other device kept
+   writing, fell out of the bottom, and the success path ran anyway. */
+describe('Reporting the truth');
+{
+  /* the app's loop, lifted so the real control flow is what is tested */
+  const run = (opts) => {
+    const gh = opts.gh;
+    let remoteVersion = opts.remoteVersion;
+    let pushed = false;
+    let payload = 'mine';
+    const log = [];
+    return (async () => {
+      for (let attempt = 0; attempt < 4; attempt++) {
+        const now = await gh.version();
+        log.push(`saw ${now}`);
+        if (now && remoteVersion && now !== remoteVersion) {
+          remoteVersion = now;
+          payload = 'merged';
+          log.push('remote moved — merging');
+          continue;
+        }
+        remoteVersion = await gh.push(payload);
+        pushed = true;
+        log.push('pushed ' + payload);
+        break;
+      }
+      if (!pushed) throw new Error('Could not save — another device kept changing the file.');
+      return { pushed, payload, log };
+    })();
+  };
+
+  /* a quiet remote: one look, one write */
+  {
+    let v = 'v1';
+    const r = await run({ remoteVersion: 'v1', gh: { version: async () => v, push: async (p) => { v = 'v2'; return v; } } });
+    check('a quiet remote is written to', r.pushed);
+    eq('and sends what this device has', r.payload, 'mine');
+  }
+
+  /* the other device wrote once while we were thinking */
+  {
+    let v = 'v9';
+    const r = await run({ remoteVersion: 'v1', gh: { version: async () => v, push: async () => 'v10' } });
+    check('a remote that moved is still written to', r.pushed);
+    eq('and what goes up carries both sides', r.payload, 'merged');
+  }
+
+  /* the other device never stops writing */
+  {
+    let n = 0;
+    let err = null;
+    try {
+      await run({ remoteVersion: 'v0', gh: { version: async () => 'v' + ++n, push: async () => 'vp' } });
+    } catch (e) { err = e; }
+    check('a remote that never settles fails loudly', !!err);
+    check('rather than reporting a sync that never happened', err && /could not save/i.test(err.message), err && err.message);
+  }
+}
+
 process.exit(report('Sync') ? 1 : 0);

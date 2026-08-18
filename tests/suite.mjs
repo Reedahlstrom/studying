@@ -829,18 +829,24 @@ describe('Sync health');
   /* relative to the real clock: syncHealth asks Date.now() how long it has
      been, so pinning a wall-clock date here just tests the calendar */
   const now = Date.now();
-  const health = (settings, lastGood) => sandbox(['syncHealth'], `
+  const health = (settings, lastGood) => sandbox(['syncFacts', 'syncPill', 'syncHealth'], `
     const el = { hidden: null, innerHTML: '', textContent: '',
                  set innerHTML_(v) {} };
-    const state = { settings: ${JSON.stringify(settings)} };
+    const state = { settings: ${JSON.stringify(settings)}, cards: [], decks: [] };
     const lastGood = ${lastGood};
     const SYNC = { syncConfig: (s) => ({ on: !!(s && s.syncToken) }) };
-    const $ = (sel) => (sel === '#syncHealth' ? el : null);
+    const pill = { hidden: null, className: '', textContent: '' };
+    const facts = { hidden: null, innerHTML: '' };
+    const $ = (sel) => (sel === '#syncHealth' ? el : sel === '#syncPill' ? pill : sel === '#syncFacts' ? facts : null);
+    const esc = (x) => String(x);
+    const dayKey = () => '2026-08-18';
     const go = () => {};
     const Date_ = Date;
     const humanTime = () => 'an hour ago';
     const result = () => ({ hidden: el.hidden, text: el.innerHTML || el.textContent });
-  `, { exports: ['result'] });
+    const pillState = () => ({ hidden: pill.hidden, kind: pill.className, text: pill.textContent });
+    const factsHtml = () => facts.innerHTML;
+  `, { exports: ['result', 'pillState', 'factsHtml'] });
 
   {
     const h = health({}, 0);
@@ -875,6 +881,44 @@ describe('Sync health');
     const h = health({}, 0);
     h.syncHealth();
     check('the warning offers a way to fix it', /Fix this/.test(h.result().text));
+  }
+
+  /* The deck screen is the one Reed was looking at both times he found this
+     broken, and it showed nothing at all. */
+  {
+    const h = health({}, 0);
+    h.syncHealth();
+    const p = h.pillState();
+    eq('the deck screen says when a device is not syncing', p.hidden, false);
+    check('and says it loudly', /bad/.test(p.kind), p.kind);
+    check('and says what to do', /tap to fix/i.test(p.text), p.text);
+  }
+  {
+    const now = Date.now();
+    const h = health({ syncToken: 'ghp_x', syncedAt: new Date(now).toISOString() }, now);
+    h.syncHealth();
+    const p = h.pillState();
+    eq('a healthy device still shows its state, quietly', p.hidden, false);
+    check('and shows it as fine', /ok/.test(p.kind), p.kind);
+    check('with when it last synced', /synced/i.test(p.text), p.text);
+  }
+
+  /* Two devices that disagree have to be comparable without guesswork, and
+     the shared file id is the fact that settles it. */
+  {
+    const h = health({ syncToken: 'ghp_x', syncGist: 'abc123' }, Date.now());
+    h.syncHealth();
+    const html = h.factsHtml();
+    check('the facts name the shared file', /abc123/.test(html), html);
+    check('and whether it is connected', /Connected/.test(html));
+    check('and how much is here', /Cards here/.test(html));
+    check('and what was done today', /Studied today/.test(html));
+  }
+  {
+    const h = health({}, 0);
+    h.syncHealth();
+    check('an unconnected device says so in the facts too',
+      /NO — work stays on this device/.test(h.factsHtml()), h.factsHtml());
   }
 }
 
