@@ -2020,6 +2020,35 @@ function finishSession() {
   applyPendingMerge();
   drainPendingRemote();
   syncAfterWork();
+
+  /* Finishing is the moment you decide the night is handled, so it is the
+     moment to be honest about whether the work has actually left. Reported
+     here as well as on Today, because this is the screen you are looking at. */
+  reportWhereTheWorkIs();
+}
+
+function reportWhereTheWorkIs() {
+  const el = $('#doneSync');
+  if (!el) return;
+  const cfg = SYNC.syncConfig(state.settings);
+  if (!cfg.on) {
+    el.hidden = false;
+    el.className = 'done-sync bad';
+    el.textContent = 'Saved on this device only — it will not reach your phone.';
+    return;
+  }
+  el.hidden = false;
+  el.className = 'done-sync';
+  el.textContent = 'Saving to your other devices…';
+  /* Tell the truth once the push has had time to land. */
+  const started = state.settings.syncedAt;
+  setTimeout(() => {
+    const moved = state.settings.syncedAt !== started;
+    el.className = 'done-sync ' + (moved ? 'ok' : 'bad');
+    el.textContent = moved
+      ? 'Safely on your other devices.'
+      : 'Not synced yet — leave this open a moment, or check Settings.';
+  }, 6000);
 }
 
 /* ───────────────────────── adding cards ───────────────────────── */
@@ -3149,6 +3178,9 @@ function boot() {
   $$('.quick[data-go]').forEach((b) => b.addEventListener('click', () => { cameFrom = 'deck'; go(b.dataset.go); }));
 
   $('#deckStart').addEventListener('click', async () => {
+    /* Never let a night's work land on a device that is not syncing without
+       having said so. Asked once, then remembered. */
+    if (!(await agreedToStudyAlone())) return;
     /* Catch up before handing over a card. Studying a deck this device has
        not heard about yet is how you end up doing the same night twice. */
     await caughtUp();
@@ -3651,17 +3683,33 @@ function syncAfterWork() {
 /* Say so when it stops working. A sync that has quietly failed for an hour is
    the whole problem this exists to solve, and Settings is not where anyone
    would look. */
+/* The state that most deserves a warning used to be the one state that
+   showed none: this said nothing at all when sync was switched off. A night's
+   work went onto a device that was not syncing, and the app looked exactly
+   the way it looks when everything is fine. Off is the loudest case now, not
+   the quiet one. */
 function syncHealth() {
   const el = $('#syncHealth');
   if (!el) return;
   const cfg = SYNC.syncConfig(state.settings);
-  if (!cfg.on) { el.hidden = true; return; }
-  const stale = lastGood && Date.now() - lastGood > 15 * 60 * 1000;
-  const never = !lastGood && !state.settings.syncedAt;
-  el.hidden = !(stale || never);
-  el.textContent = never
-    ? 'This device has never synced — your work is only here.'
-    : 'Not synced for a while — your work is only on this device.';
+
+  let message = null;
+  if (!cfg.on) {
+    message = 'This device is not syncing. Anything you study here stays here.';
+  } else if (!lastGood && !state.settings.syncedAt) {
+    message = 'This device has never finished a sync — your work is only here.';
+  } else {
+    const at = lastGood || Date.parse(state.settings.syncedAt || 0);
+    if (at && Date.now() - at > 15 * 60 * 1000) {
+      message = `Not synced since ${humanTime(new Date(at).toISOString())} — your work is only on this device.`;
+    }
+  }
+
+  el.hidden = !message;
+  if (!message) return;
+  el.innerHTML = `<span>${message}</span><button class="sync-fix" id="syncFix">Fix this</button>`;
+  const fix = $('#syncFix');
+  if (fix) fix.addEventListener('click', () => { go('more'); setTimeout(() => { const f = $('#syncToken'); if (f) f.focus(); }, 250); });
 }
 
 /* Wait for the first catch-up before handing over a card, so you are never
@@ -3689,6 +3737,35 @@ function tokenProblem(t) {
   return null;
 }
 
+/* Resolves true when it is fine to start studying: either this device syncs,
+   or you have said out loud that you know it does not. */
+function agreedToStudyAlone() {
+  if (SYNC.syncConfig(state.settings).on || state.settings.soloOk) return Promise.resolve(true);
+  return new Promise((resolve) => {
+    const scrim = $('#soloScrim');
+    if (!scrim) return resolve(true);          // never block on a missing dialog
+    scrim.hidden = false;
+    const done = (answer) => {
+      scrim.hidden = true;
+      $('#soloConnect').removeEventListener('click', connect);
+      $('#soloAnyway').removeEventListener('click', anyway);
+      resolve(answer);
+    };
+    const connect = () => {
+      done(false);
+      go('more');
+      setTimeout(() => { const f = $('#syncToken'); if (f) f.focus(); }, 250);
+    };
+    const anyway = () => {
+      state.settings.soloOk = true;            // asked once per device, not every night
+      writeNow();
+      done(true);
+    };
+    $('#soloConnect').addEventListener('click', connect);
+    $('#soloAnyway').addEventListener('click', anyway);
+  });
+}
+
 function setupSync() {
   const cfg = SYNC.syncConfig(state.settings);
   $('#syncToken').value = cfg.token;
@@ -3706,6 +3783,7 @@ function setupSync() {
     if (problem) { syncState(problem, 'bad'); return; }
     state.settings.syncToken = token;
     state.settings.syncGist = '';
+    state.settings.soloOk = false;
     writeNow();
     await runSync();
   });

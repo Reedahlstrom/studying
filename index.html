@@ -13,7 +13,7 @@
 <link rel="manifest" href="manifest.webmanifest" />
 <link rel="icon" href="icons/icon.svg" type="image/svg+xml" />
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
-<link rel="stylesheet" href="styles.css?v=39" />
+<link rel="stylesheet" href="styles.css?v=40" />
 </head>
 <body>
 
@@ -227,6 +227,8 @@
       <div class="done-ring"><svg viewBox="0 0 120 120" aria-hidden="true"><circle cx="60" cy="60" r="52"/><circle cx="60" cy="60" r="52" class="ring-fg" id="doneRing"/></svg><span id="donePct">0%</span></div>
       <h2>Session complete</h2>
       <p id="doneSummary">—</p>
+      <!-- where the night's work actually is -->
+      <p class="done-sync" id="doneSync" hidden></p>
       <div class="done-actions">
         <button class="btn ghost" id="doneHome">Back to deck</button>
         <button class="btn primary" id="doneAgain">Study more</button>
@@ -548,6 +550,20 @@ opportunity cost&#9;what you gave up"></textarea></label>
 </div>
 
 <!-- ───── goal sheet ───── -->
+<!-- Studying on a device that is not syncing is a decision, not an accident.
+     Asked once per device, then remembered. -->
+<div class="modal-scrim" id="soloScrim" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="soloTitle">
+    <h3 id="soloTitle">This device isn't syncing</h3>
+    <p class="hint">Anything you study here stays in this browser. It will not reach your phone, and clearing site data loses it.</p>
+    <div class="modal-actions">
+      <span class="spacer"></span>
+      <button class="btn ghost" id="soloAnyway">Study here only</button>
+      <button class="btn primary" id="soloConnect">Connect it now</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-scrim" id="goalScrim" hidden>
   <div class="modal" role="dialog" aria-modal="true" aria-labelledby="goalTitle">
     <h3 id="goalTitle">New goal</h3>
@@ -566,6 +582,6 @@ opportunity cost&#9;what you gave up"></textarea></label>
 
 <div class="busy" id="busy" hidden><div class="spinner"></div><p id="busyText">Thinking…</p></div>
 
-<script src="app.js?v=39" type="module"></script>
+<script src="app.js?v=40" type="module"></script>
 </body>
 </html>

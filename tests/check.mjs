@@ -101,7 +101,7 @@ console.log('\nCache');
     const { execFileSync } = await import('child_process');
     const git = (args) => execFileSync('git', args, { cwd: ROOT, encoding: 'utf8' }).trim();
     const changed = git(['diff', 'HEAD', '--name-only']).split('\n').filter(Boolean);
-    const codeChanged = changed.some((f) => /^(app|globe|sync|passages|planner)\.js$|^styles\.css$/.test(f));
+    const codeChanged = changed.some((f) => /^(app|globe|sync|passages|planner)\.js$|^styles\.css$|^index\.html$/.test(f));
     if (codeChanged && !changed.includes('sw.js')) {
       fail('app code changed but sw.js was not bumped — the worker will serve the old copy');
     } else if (codeChanged) {

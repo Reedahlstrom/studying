@@ -808,4 +808,64 @@ describe('Token check');
 }
 
 
+
+/* ═══════════ 15 · Saying when the work is stranded ═══════════
+   A night's work went onto a device that was not syncing and the app looked
+   exactly the way it looks when everything is fine, because the warning was
+   hidden in precisely the state that most needed one. */
+describe('Sync health');
+{
+  /* relative to the real clock: syncHealth asks Date.now() how long it has
+     been, so pinning a wall-clock date here just tests the calendar */
+  const now = Date.now();
+  const health = (settings, lastGood) => sandbox(['syncHealth'], `
+    const el = { hidden: null, innerHTML: '', textContent: '',
+                 set innerHTML_(v) {} };
+    const state = { settings: ${JSON.stringify(settings)} };
+    const lastGood = ${lastGood};
+    const SYNC = { syncConfig: (s) => ({ on: !!(s && s.syncToken) }) };
+    const $ = (sel) => (sel === '#syncHealth' ? el : null);
+    const go = () => {};
+    const Date_ = Date;
+    const humanTime = () => 'an hour ago';
+    const result = () => ({ hidden: el.hidden, text: el.innerHTML || el.textContent });
+  `, { exports: ['result'] });
+
+  {
+    const h = health({}, 0);
+    h.syncHealth();
+    const r = h.result();
+    eq('a device with no sync at all is warned about', r.hidden, false);
+    check('and told plainly what that means', /stays here|only/i.test(r.text), r.text);
+  }
+  {
+    const h = health({ syncToken: 'ghp_x' }, 0);
+    h.syncHealth();
+    const r = h.result();
+    eq('a connected device that has never finished is warned', r.hidden, false);
+    check('and says never finished', /never/i.test(r.text), r.text);
+  }
+  {
+    const h = health({ syncToken: 'ghp_x', syncedAt: new Date(now).toISOString() }, now);
+    h.syncHealth();
+    eq('a device that just synced is left alone', h.result().hidden, true);
+  }
+  {
+    /* an hour ago */
+    const old = now - 60 * 60 * 1000;
+    const h = health({ syncToken: 'ghp_x', syncedAt: new Date(old).toISOString() }, old);
+    h.syncHealth();
+    const r = h.result();
+    eq('a device that has gone quiet is warned', r.hidden, false);
+    check('and says how long', /since/i.test(r.text), r.text);
+  }
+  {
+    /* the warning has to be actionable, not just true */
+    const h = health({}, 0);
+    h.syncHealth();
+    check('the warning offers a way to fix it', /Fix this/.test(h.result().text));
+  }
+}
+
+
 process.exit(report('Suite') ? 1 : 0);

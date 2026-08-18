@@ -142,7 +142,13 @@ async function sweep() {
   const target = decks.find((d) => !/world|geo/.test(d.dataset.deck));
   if (target) {
     await click(target, 220);
-    await click('#deckStart', 280);
+    await click('#deckStart', 320);
+    /* A device that is not syncing must say so before taking a night's work,
+       and must only ask once. */
+    if (visible($('#soloScrim'))) {
+      check('an unsynced device warns before you study', true);
+      await click('#soloAnyway', 320);
+    }
     eq('starting a deck opens the study view', shown(), ['view-study']);
     check('a card is showing', !!$('#cardFront') && $('#cardFront').textContent.trim().length);
 
@@ -195,6 +201,7 @@ async function sweep() {
   if (globeDeck) {
     await click(globeDeck, 200);
     await click('#deckStart', 700);
+    if (visible($('#soloScrim'))) await click('#soloAnyway', 400);
     eq('the geography deck opens the globe, never cards', shown(), ['view-globe']);
     check('no flashcard is anywhere near it', !visible($('#flashcard')));
     const cv = $('#globeCanvas');
@@ -258,8 +265,21 @@ async function sweep() {
   }
 
   await click('#settingsBtn', 320);
-  for (const id of ['#exportBtn', '#importBtn', '#resetBtn', '#themeToggle', '#gateSwitch']) {
+  for (const id of ['#exportBtn', '#importBtn', '#resetBtn', '#themeToggle', '#gateSwitch', '#syncToken', '#syncSave']) {
     check(`${id} is present`, !!$(id));
+  }
+
+  /* the warning that was hidden in exactly the state that needed it */
+  describe('Sync warning');
+  await click('[data-go="today"]', 260);
+  const health = $('#syncHealth');
+  const connected = (() => {
+    try { return !!JSON.parse(localStorage.getItem(STORE_KEY)).settings.syncToken; } catch (_) { return false; }
+  })();
+  if (!connected) {
+    check('an unsynced device says so on Today', visible(health), health ? 'hidden' : 'missing');
+    check('and says what it means', health && /stays here|only/i.test(health.textContent), health && health.textContent);
+    check('and offers a way to fix it', !!$('#syncFix'));
   }
 
   /* deleting a deck must take deliberate effort — opening the editor and
