@@ -237,8 +237,25 @@ highWater = state.cards.length;   // so an emptying bug is caught on its first w
 /* What makes two cards the same card, on two devices that have never agreed
    on an id. Used by the merge and by tombstones, so a deletion on one device
    is recognised on the other. */
+/* A short, stable fingerprint of the identity rather than the identity
+   itself. Spelling it out would put the whole question back on the wire,
+   which is the thing the slimming exists to avoid. Two independent 32-bit
+   hashes, so a collision between two cards is not something that happens. */
+function fingerprint(str) {
+  let a = 0x811c9dc5, b = 5381;
+  for (let i = 0; i < str.length; i++) {
+    const c = str.charCodeAt(i);
+    a = Math.imul((a ^ c) >>> 0, 16777619) >>> 0;
+    b = (Math.imul(b, 33) ^ c) >>> 0;
+  }
+  return a.toString(36) + b.toString(36);
+}
+
 const identity = (c) =>
-  c && c.front ? `${c.deckId}\u0000${String(c.front).trim().toLowerCase()}` : `id:${c && c.id}`;
+  !c ? 'id:none'
+  : c.__key ? c.__key                                      // arrived slimmed, already keyed
+  : c.front ? fingerprint(`${c.deckId}\u0000${String(c.front).trim().toLowerCase()}`)
+  : `id:${c.id}`;
 
 /* `local` means the other copy is another tab of this same browser, not
    another device. That distinction matters for credentials: a token must
@@ -269,6 +286,24 @@ function mergeStates(mine, theirs, { local = false } = {}) {
   const byKey = new Map();
   for (const c of theirs.cards) byKey.set(identity(c), c);
 
+  /* Content from whichever copy has it, progress from whichever is further
+     ahead. They are not always the same copy: a card arriving from another
+     device carries only progress, because the question it asks came from the
+     curriculum and is already here. Swapping the whole object would blank the
+     card. */
+  const combine = (a, b) => {
+    const win = better(a, b);
+    const base = a.front ? a : (b.front ? b : a);
+    const out = { ...base };
+    for (const k of PROGRESS) out[k] = win[k];
+    /* both sides pick the same id, or they disagree for ever and every sync
+       rewrites the gist to say so */
+    const ids = [a.id, b.id].filter(Boolean).sort();
+    out.id = ids[0] || base.id;
+    delete out.__key;
+    return out;
+  };
+
   const merged = [];
   const taken = new Set();
   for (const c of mine.cards) {
@@ -277,14 +312,24 @@ function mergeStates(mine, theirs, { local = false } = {}) {
     taken.add(k);
     const t = byKey.get(k);
     byKey.delete(k);
-    merged.push(t ? better(c, t) : c);
+    merged.push(t ? combine(c, t) : c);
   }
-  for (const left of byKey.values()) {   // cards only the other side has
+
+  /* Cards only the other side has. One with no text is a seed card this
+     device has not built yet — its progress is held until it appears, rather
+     than dropped or shown as a blank card. */
+  const orphans = { ...(mine.orphanProgress || {}) };
+  for (const left of byKey.values()) {
     const k = identity(left);
     if (taken.has(k)) continue;
     taken.add(k);
+    if (!left.front) {
+      orphans[k] = Object.fromEntries(PROGRESS.map((f) => [f, left[f]]));
+      continue;
+    }
     merged.push(left);
   }
+  out.orphanProgress = orphans;
 
   /* Deleting is a decision, and a decision has to travel. Merging is
      otherwise pure union, so the device that never heard about a deletion
@@ -353,10 +398,65 @@ const SECRET_SHAPES = [
   /sk-ant-[A-Za-z0-9-]{16,}/,       // Anthropic
 ];
 
+/* Which fields are progress rather than content. Progress is the only part
+   of a seed card that is worth sending: the question, the answer, the
+   category and the ordering all came from the curriculum files, are identical
+   on every device, and cost about 400 bytes a card to repeat. */
+const PROGRESS = ['box', 'mastered', 'lastReviewed', 'seen', 'right', 'lapses', 'stage', 'reps'];
+
+/* Progress that arrived for a card this device could not yet build — a deck
+   the other device had seeded first. Held by fingerprint until the card
+   appears, so being a version behind costs you nothing. */
+function applyHeldProgress() {
+  const held = state.orphanProgress;
+  if (!held || !Object.keys(held).length) return;
+  let landed = 0;
+  for (const card of state.cards) {
+    const p = held[identity(card)];
+    if (!p) continue;
+    /* only forward: never undo something this device did later */
+    if ((p.lastReviewed || '') > (card.lastReviewed || '') || (p.seen || 0) > (card.seen || 0)) {
+      for (const f of PROGRESS) if (p[f] !== undefined) card[f] = p[f];
+    }
+    delete held[identity(card)];
+    landed++;
+  }
+  if (landed) console.info(`Sync: applied progress for ${landed} cards that arrived early.`);
+}
+
+/* A seed card on the wire: its identity, and what you have done with it.
+   Reed's ledger is 1.12 MB sent in full, and it is sent on every change — a
+   single session moved ten megabytes. The same ledger as progress is about a
+   seventh of that. */
+const slimCard = (c) => ({
+  k: identity(c), d: c.deckId,
+  b: c.box, s: c.seen, r: c.right, l: c.lastReviewed,
+  m: c.mastered ? 1 : 0, x: c.lapses || 0, g: c.stage || 0, p: c.reps || 0,
+});
+const fatCard = (row) => ({
+  __key: row.k, deckId: row.d, front: null, back: null,
+  box: row.b, seen: row.s, right: row.r, lastReviewed: row.l,
+  mastered: !!row.m, lapses: row.x || 0, stage: row.g || 0, reps: row.p || 0,
+});
+
+/* Undo the slimming. Cards the curriculum can rebuild come back as progress
+   with no text; the merge knows to take content from the local copy. */
+function fromTheWire(remote) {
+  if (!remote || remote.wire !== 2) return remote;          // an older device, sending everything
+  return { ...remote, cards: (remote.cards || []).map((row) => (row.k ? fatCard(row) : row)) };
+}
+
 function forTheWire(s) {
   const settings = { ...(s.settings || {}) };
   for (const k of NEVER_LEAVES) delete settings[k];
-  const out = { ...s, settings };
+  const out = {
+    ...s,
+    settings,
+    wire: 2,
+    /* Only cards the curriculum can rebuild are slimmed. Anything you wrote
+       yourself goes in full, because nothing else knows what it says. */
+    cards: (s.cards || []).map((c) => (c.source === 'seed' && c.front ? slimCard(c) : c)),
+  };
 
   const body = JSON.stringify(out);
   for (const shape of SECRET_SHAPES) {
@@ -3088,6 +3188,10 @@ function seed() {
     if (added) console.info(`Learn Things Good: added ${added} curriculum cards.`);
   }
 
+  /* Work another device did on cards this one had not built yet. It was held
+     rather than dropped when it arrived; now that the cards exist, it lands. */
+  applyHeldProgress();
+
   /* A seeded deck with no seed on the Goals page is a deck you never find.
      Plant one the first time the deck appears — but never re-plant one you
      deliberately deleted, and never touch a habit you have already tuned. */
@@ -3593,7 +3697,7 @@ async function runSync({ quiet = false, pushOnly = false } = {}) {
     if (canMerge) {
       const { state: theirs, version } = await SYNC.pull(cfg.token, gist);
       remoteVersion = version;
-      if (theirs) adoptRemote(theirs);
+      if (theirs) adoptRemote(fromTheWire(theirs));
     }
 
     /* Look again right before writing. If the other device wrote while we
@@ -3603,8 +3707,8 @@ async function runSync({ quiet = false, pushOnly = false } = {}) {
       if (now && remoteVersion && now !== remoteVersion) {
         const { state: theirs, version } = await SYNC.pull(cfg.token, gist);
         remoteVersion = version;
-        if (theirs && canMerge) adoptRemote(theirs);
-        else if (theirs) { pendingRemote = theirs; }   // mid-session: hold it
+        if (theirs && canMerge) adoptRemote(fromTheWire(theirs));
+        else if (theirs) { pendingRemote = fromTheWire(theirs); }   // mid-session: hold it
         continue;
       }
       writeNow({ silent: true });

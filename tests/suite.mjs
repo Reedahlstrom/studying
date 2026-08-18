@@ -9,7 +9,7 @@ const BOX1_LIMIT = 30;
 /* The real scheduling functions, lifted from app.js and given a fake clock. */
 const day = { now: '2026-08-17' };
 const sched = sandbox(
-  ['isDue', 'isNew', 'isReview', 'inBox', 'box1Load', 'grade', 'identity', 'mergeStates'],
+  ['isDue', 'isNew', 'isReview', 'inBox', 'box1Load', 'grade', 'fingerprint', 'identity', 'PROGRESS', 'mergeStates'],
   `const INTERVALS = ${JSON.stringify(INTERVALS)};
    const BOX_COUNT = ${BOX_COUNT};
    const BOX1_LIMIT = ${BOX1_LIMIT};
@@ -513,7 +513,7 @@ describe('Safety net');
    either of them did may go missing. */
 describe('Two devices');
 {
-  const wire = sandbox(['NEVER_LEAVES', 'SECRET_SHAPES', 'forTheWire']);
+  const wire = sandbox(['NEVER_LEAVES', 'SECRET_SHAPES', 'fingerprint', 'identity', 'PROGRESS', 'slimCard', 'fatCard', 'fromTheWire', 'forTheWire']);
 
   /* — the credential never leaves — */
   {
@@ -537,8 +537,19 @@ describe('Two devices');
     const hidden = (where) => {
       try { wire.forTheWire(where); return 'sent'; } catch (e) { return 'refused'; }
     };
-    eq('a token smuggled into a card is refused', hidden({
-      cards: [makeCard({ front: 'my token', back: 'ghp_abcdefghij0123456789abcdefghij' })],
+    /* A seed card's text does not go at all any more, so a secret pasted into
+       one cannot leave — check the payload rather than the refusal. */
+    const seedCard = {
+      cards: [makeCard({ source: 'seed', front: 'my token', back: 'ghp_abcdefghij0123456789abcdefghij' })],
+      decks: [], settings: {},
+    };
+    eq('a secret in curriculum text does not stop the sync', hidden(seedCard), 'sent');
+    check('because that text never leaves at all',
+      !JSON.stringify(wire.forTheWire(seedCard)).includes('ghp_abcdefghij'));
+
+    /* one you wrote yourself does go, in full, so it must be refused */
+    eq('a token in a card you wrote is refused', hidden({
+      cards: [makeCard({ source: 'manual', front: 'my token', back: 'ghp_abcdefghij0123456789abcdefghij' })],
       decks: [], settings: {},
     }), 'refused');
     eq('a fine-grained token anywhere is refused', hidden({
@@ -704,7 +715,7 @@ describe('Deleting');
     const mine = {
       rev: 2, decks: [deck('keep')], log: {}, daily: {}, settings: {},
       cards: [makeCard({ id: 'k1', deckId: 'keep', front: 'keeper' })],
-      deletedCards: { 'keep\u0000doomed card': '2026-08-17' },
+      deletedCards: { [sched.identity({ deckId: 'keep', front: 'Doomed card' })]: '2026-08-17' },
     };
     const theirs = {
       rev: 40, decks: [deck('keep')], log: {}, daily: {}, settings: {},
@@ -865,6 +876,100 @@ describe('Sync health');
     h.syncHealth();
     check('the warning offers a way to fix it', /Fix this/.test(h.result().text));
   }
+}
+
+
+
+/* ═══════════ 16 · What actually goes over the wire ═══════════
+   A full ledger was 1.12 MB and it was sent on every change; one session
+   moved ten megabytes. Only progress travels now, and the round trip has to
+   be exact — this is the path a night's work takes to the other device. */
+describe('The wire');
+{
+  const w = sandbox(['NEVER_LEAVES', 'SECRET_SHAPES', 'fingerprint', 'identity', 'PROGRESS', 'slimCard', 'fatCard', 'fromTheWire', 'forTheWire']);
+
+  const curriculum = (n) => Array.from({ length: n }, (_, i) => makeCard({
+    id: 'c' + i, deckId: 'biz', source: 'seed',
+    front: 'A reasonably long curriculum question number ' + i + ' about business',
+    back: 'A reasonably long answer to question ' + i + ' with detail',
+    category: 'economics', seq: i, group: 'g' + (i % 40),
+  }));
+
+  const full = { rev: 3, decks: [{ id: 'biz' }], log: {}, daily: {}, settings: {}, cards: curriculum(400) };
+  full.cards[7].seen = 4; full.cards[7].right = 3; full.cards[7].box = 3; full.cards[7].lastReviewed = '2026-08-18';
+
+  const sent = w.forTheWire(full);
+  const before = JSON.stringify(full).length;
+  const after = JSON.stringify(sent).length;
+  check('the payload gets much smaller', after < before / 4, `${before} → ${after}`);
+  check('curriculum text does not travel', !JSON.stringify(sent).includes('reasonably long curriculum question'));
+  eq('every card is still accounted for', sent.cards.length, 400);
+
+  /* the other device expands it and merges against its own copy */
+  const theirs = w.fromTheWire(JSON.parse(JSON.stringify(sent)));
+  const mine = { rev: 1, decks: [{ id: 'biz' }], log: {}, daily: {}, settings: {}, cards: curriculum(400) };
+  const m = sched.mergeStates(mine, theirs);
+
+  eq('no cards are lost or duplicated', m.cards.length, 400);
+  const c7 = m.cards.find((c) => c.front.includes('number 7 '));
+  check('the card still knows what it asks', !!c7 && /curriculum question number 7/.test(c7.front), c7 && c7.front);
+  check('and still knows its answer', !!c7 && /answer to question 7/.test(c7.back));
+  eq('and has picked up the progress from the other device', c7.seen, 4);
+  eq('including its box', c7.box, 3);
+  eq('and the day it was studied', c7.lastReviewed, '2026-08-18');
+  check('untouched cards keep their text too', m.cards.every((c) => !!c.front && !!c.back));
+  check('nothing is left carrying a wire key', m.cards.every((c) => !('__key' in c)));
+
+  /* a card you wrote yourself has to travel in full — nothing can rebuild it */
+  const withOwn = {
+    ...full,
+    cards: [...curriculum(3), makeCard({ id: 'own', deckId: 'biz', source: 'manual', front: 'My own question', back: 'My own answer' })],
+  };
+  const ownSent = w.forTheWire(withOwn);
+  check('a card you wrote goes in full', JSON.stringify(ownSent).includes('My own answer'));
+  const ownBack = w.fromTheWire(JSON.parse(JSON.stringify(ownSent)));
+  const fresh = sched.mergeStates({ ...mine, cards: [] }, ownBack);
+  check('and survives a device that has never seen it',
+    fresh.cards.some((c) => c.front === 'My own question' && c.back === 'My own answer'));
+
+  /* progress for a card this device has not built yet is kept, not dropped */
+  const ahead = w.fromTheWire(JSON.parse(JSON.stringify(w.forTheWire({
+    ...full, cards: curriculum(402).map((c, i) => (i === 401 ? { ...c, seen: 9, lastReviewed: '2026-08-18', box: 4 } : c)),
+  }))));
+  const behind = sched.mergeStates(mine, ahead);
+  eq('cards it cannot build yet are not shown blank', behind.cards.filter((c) => !c.front).length, 0);
+  const held = Object.keys(behind.orphanProgress || {}).length;
+  check('their progress is held rather than thrown away', held >= 2, `held ${held}`);
+
+  /* and lands the moment this device builds those cards */
+  const apply = sandbox(['fingerprint', 'identity', 'PROGRESS', 'applyHeldProgress'], `
+    const state = ${JSON.stringify({ cards: [], orphanProgress: {} })};
+    const console = { info: () => {} };
+    const load = (cards, orphans) => { state.cards = cards; state.orphanProgress = orphans; };
+    const cards = () => state.cards;
+    const leftover = () => Object.keys(state.orphanProgress).length;
+  `, { exports: ['load', 'cards', 'leftover'] });
+
+  const late = curriculum(402)[401];
+  apply.load([{ ...late, seen: 0, lastReviewed: null, box: 1 }],
+    { [sched.identity(late)]: { seen: 9, lastReviewed: '2026-08-18', box: 4, right: 8, mastered: false, lapses: 0, stage: 0, reps: 0 } });
+  apply.applyHeldProgress();
+  eq('held progress lands once the card exists', apply.cards()[0].seen, 9);
+  eq('with the right box', apply.cards()[0].box, 4);
+  eq('and is not held twice', apply.leftover(), 0);
+
+  /* it must never undo newer local work */
+  apply.load([{ ...late, seen: 12, lastReviewed: '2026-08-19', box: 5 }],
+    { [sched.identity(late)]: { seen: 2, lastReviewed: '2026-08-17', box: 2 } });
+  apply.applyHeldProgress();
+  eq('and never drags newer local work backwards', apply.cards()[0].seen, 12);
+
+  /* an older device that still sends everything must keep working */
+  const oldStyle = { rev: 9, decks: [{ id: 'biz' }], log: {}, daily: {}, settings: {}, cards: curriculum(400) };
+  oldStyle.cards[3].seen = 6; oldStyle.cards[3].lastReviewed = '2026-08-18'; oldStyle.cards[3].box = 4;
+  const compat = sched.mergeStates(mine, w.fromTheWire(oldStyle));
+  eq('a device on the old format still merges', compat.cards.length, 400);
+  eq('and its work still arrives', compat.cards.find((c) => c.front.includes('number 3 ')).seen, 6);
 }
 
 
