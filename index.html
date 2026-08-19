@@ -13,7 +13,7 @@
 <link rel="manifest" href="manifest.webmanifest" />
 <link rel="icon" href="icons/icon.svg" type="image/svg+xml" />
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
-<link rel="stylesheet" href="styles.css?v=42" />
+<link rel="stylesheet" href="styles.css?v=43" />
 </head>
 <body>
 
@@ -433,6 +433,11 @@ opportunity cost&#9;what you gave up"></textarea></label>
         <button class="btn ghost" id="syncClear">Disconnect</button>
         <button class="btn primary" id="syncSave">Connect</button>
       </div>
+      <!-- Setting up the second device should not mean doing the first
+           device's work again. -->
+      <div class="key-actions" id="linkRow" hidden>
+        <button class="btn ghost" id="syncLink">Copy a link to set up another device</button>
+      </div>
     </div>
 
     <div class="panel">
@@ -589,6 +594,6 @@ opportunity cost&#9;what you gave up"></textarea></label>
 
 <div class="busy" id="busy" hidden><div class="spinner"></div><p id="busyText">Thinking…</p></div>
 
-<script src="app.js?v=42" type="module"></script>
+<script src="app.js?v=43" type="module"></script>
 </body>
 </html>

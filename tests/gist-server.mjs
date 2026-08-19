@@ -87,7 +87,10 @@ http.createServer((req, res) => {
         cards: (l.cards || []).length,
         wire: l.wire,
         kb: Math.round(g.content.length / 1024),
-        studiedToday: (l.cards || []).filter((c) => (c.l || c.lastReviewed) === '2026-08-18').length,
+        studiedToday: (l.cards || []).filter((c) => {
+          const d = c.l || c.lastReviewed;
+          return d && d === new Date().toISOString().slice(0, 10);
+        }).length,
         decks: (l.decks || []).map((d) => d.name),
       });
     }

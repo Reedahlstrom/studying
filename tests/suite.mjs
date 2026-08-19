@@ -1017,4 +1017,63 @@ describe('The wire');
 }
 
 
+
+/* ═══════════ 17 · Setting up the second device ═══════════
+   The one step that could not be made automatic — a device with no
+   credential cannot write anywhere — made into one tap instead. */
+describe('Linking a device');
+{
+  const link = (settings, hash) => sandbox(['tokenProblem', 'CONNECT_PREFIX', 'connectLink', 'adoptConnectLink'], `
+    const state = { settings: ${JSON.stringify(settings)} };
+    const location = { origin: 'https://reedahlstrom.github.io', pathname: '/studying/', search: '', hash: ${JSON.stringify(hash || '')} };
+    const scrubbed = [];
+    const history = { replaceState: (a, b, url) => { scrubbed.push(url); location.hash = ''; } };
+    const toasts = [];
+    const toast = (m, k) => toasts.push(k + ': ' + m);
+    const writeNow = () => {};
+    const btoa = (s) => Buffer.from(s, 'binary').toString('base64');
+    const atob = (s) => Buffer.from(s, 'base64').toString('binary');
+    const result = () => ({ token: state.settings.syncToken, gist: state.settings.syncGist, soloOk: state.settings.soloOk, scrubbed, toasts });
+  `, { exports: ['result'] });
+
+  const TOKEN = 'ghp_' + 'a1B2c3D4e5'.repeat(3) + 'abcdef';
+
+  {
+    const l = link({ syncToken: TOKEN });
+    const url = l.connectLink();
+    check('a connected device can produce a link', !!url);
+    check('the key rides in the fragment, which never reaches a server', url.includes('#connect='));
+    check('and is not sitting in the url in plain sight', !url.includes(TOKEN));
+  }
+  {
+    const l = link({});
+    eq('a device with nothing to share offers no link', l.connectLink(), null);
+  }
+  {
+    const encoded = Buffer.from(TOKEN, 'binary').toString('base64');
+    const l = link({}, '#connect=' + encoded);
+    eq('opening the link connects the device', l.adoptConnectLink(), true);
+    const r = l.result();
+    eq('with the key from the link', r.token, TOKEN);
+    eq('and no stale gist id from before', r.gist, '');
+    eq('and it will not be asked to study alone again', r.soloOk, false);
+    check('the key is taken out of the address bar at once', r.scrubbed.length === 1 && !r.scrubbed[0].includes('connect'), JSON.stringify(r.scrubbed));
+    check('and it says what happened', r.toasts.some((t) => /connected/i.test(t)), JSON.stringify(r.toasts));
+  }
+  {
+    /* a mangled or truncated link must not be stored and left to fail later */
+    const l = link({}, '#connect=' + Buffer.from('not a token at all', 'binary').toString('base64'));
+    eq('a link carrying rubbish does not connect', l.adoptConnectLink(), false);
+    eq('and stores nothing', l.result().token, undefined);
+    check('but says why', l.result().toasts.some((t) => /bad:/.test(t)));
+    check('and still clears the address bar', l.result().scrubbed.length === 1);
+  }
+  {
+    const l = link({}, '#today');
+    eq('an ordinary link is left alone', l.adoptConnectLink(), false);
+    eq('and nothing is scrubbed', l.result().scrubbed.length, 0);
+  }
+}
+
+
 process.exit(report('Suite') ? 1 : 0);

@@ -3878,6 +3878,8 @@ function tokenProblem(t) {
    gist id is the one that matters most: two devices pointing at different
    gists will each work perfectly and never meet. */
 function syncFacts() {
+  const row = $('#linkRow');
+  if (row) row.hidden = !SYNC.syncConfig(state.settings).on;
   const el = $('#syncFacts');
   if (!el) return;
   const cfg = SYNC.syncConfig(state.settings);
@@ -3953,6 +3955,46 @@ function agreedToStudyAlone() {
   });
 }
 
+/* Setting up the second device.
+
+   Everything else about sync is now automatic, and this was the one step left
+   that could not be: a device with no credential cannot write anywhere. So
+   make it one tap instead of a procedure — the connected device produces a
+   link, and opening it anywhere else finishes the job.
+
+   The credential rides in the fragment, which browsers never send to a
+   server, and the app takes it out of the address bar the instant it has it
+   so it does not sit in history. It is still a key in a link: it is for
+   sending to yourself, not to anyone else, and the button says so. */
+const CONNECT_PREFIX = '#connect=';
+
+function connectLink() {
+  const token = state.settings.syncToken;
+  if (!token) return null;
+  const base = location.origin + location.pathname;
+  return base + CONNECT_PREFIX + btoa(token);
+}
+
+function adoptConnectLink() {
+  if (!location.hash.startsWith(CONNECT_PREFIX)) return false;
+  let token = '';
+  try { token = atob(location.hash.slice(CONNECT_PREFIX.length)); } catch (_) { token = ''; }
+  /* out of the address bar before anything else can happen to it */
+  history.replaceState(null, '', location.pathname + location.search);
+
+  const problem = tokenProblem(token);
+  if (!token || problem) {
+    toast(problem || 'That link did not carry a working key.', 'bad');
+    return false;
+  }
+  state.settings.syncToken = token;
+  state.settings.syncGist = '';
+  state.settings.soloOk = false;
+  writeNow();
+  toast('Connected. Catching up with your other device…', 'good');
+  return true;
+}
+
 function setupSync() {
   const cfg = SYNC.syncConfig(state.settings);
   $('#syncToken').value = cfg.token;
@@ -3975,6 +4017,19 @@ function setupSync() {
     await runSync();
   });
   on('#syncNow', 'click', () => runSync());
+  on('#syncLink', 'click', async () => {
+    const link = connectLink();
+    if (!link) { toast('Connect this device first.', 'bad'); return; }
+    try {
+      await navigator.clipboard.writeText(link);
+      toast('Link copied. Open it on your other device — it contains your key, so send it only to yourself.', 'good');
+    } catch (_) {
+      /* clipboard refused: show it so it can be copied by hand */
+      const f = $('#syncToken');
+      if (f) { f.type = 'text'; f.value = link; f.select(); }
+      toast('Copy the link in the box above, then open it on your other device.');
+    }
+  });
   on('#syncPill', 'click', () => {
     if (SYNC.syncConfig(state.settings).on) { runSync(); return; }
     go('more');
@@ -3989,19 +4044,26 @@ function setupSync() {
     toast('Sync turned off on this device.');
   });
 
-  /* Junk already stored from before this check existed would otherwise fail
-     on every load, for ever, with a message about code points. */
-  const stored = tokenProblem(cfg.token);
-  if (stored) {
-    state.settings.syncToken = '';
-    state.settings.syncGist = '';
-    writeNow({ silent: true });
-    $('#syncToken').value = '';
-    syncState(stored, 'bad');
-  } else if (cfg.on) {
-    /* on open */
-    firstPull = runSync({ quiet: true });
+  /* How this device starts up: linked from another device, holding junk from
+     before the token check existed, or already connected. Written as one
+     choice so that none of them can skip what comes after — an early return
+     here is exactly how the whole sync pane went dead once before. */
+  if (adoptConnectLink()) {
+    $('#syncToken').value = state.settings.syncToken;
+    firstPull = runSync();
+  } else {
+    const stored = tokenProblem(cfg.token);
+    if (stored) {
+      state.settings.syncToken = '';
+      state.settings.syncGist = '';
+      writeNow({ silent: true });
+      $('#syncToken').value = '';
+      syncState(stored, 'bad');
+    } else if (cfg.on) {
+      firstPull = runSync({ quiet: true });
+    }
   }
+
   /* whenever you come back to it */
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) return;
