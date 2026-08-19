@@ -1,5 +1,5 @@
 /* Learn Things Good service worker — offline-first app shell. */
-const VERSION = 'ledger-v45';
+const VERSION = 'ledger-v46';
 const ASSETS = [
   './',
   './index.html',
@@ -10,6 +10,7 @@ const ASSETS = [
   './math.js',
   './countries.js',
   './uvu.js',
+  './venture.js',
   './sync.js',
   './globe.js',
   './worldgeo.js',

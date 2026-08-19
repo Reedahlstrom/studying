@@ -24,6 +24,7 @@ const LEADER_ONE = (() => {
   }));
 })();
 import { UVU_CARDS } from './uvu.js';
+import { VENTURE_CARDS } from './venture.js';
 import * as SYNC from './sync.js';
 import { Globe, META, CENTRE } from './globe.js';
 import { AMBITION, chunkText, firstLetters, fadeText, gradeTyping, estimateAll, wordsIn } from './passages.js';
@@ -46,7 +47,8 @@ const WORLD_DECK = 'deck-world';
 const LEADERS_DECK = 'deck-leaders';
 const KNOWLEDGE_DECK = 'deck-knowledge';
 const UVU_DECK = 'deck-uvu';
-const SEED_VERSION = 11;   // bump whenever curriculum.js gains cards, or installs never see them
+const VENTURE_DECK = 'deck-venture';
+const SEED_VERSION = 12;   // bump whenever curriculum.js gains cards, or installs never see them
 
 const DECK_COLORS = ['#6d8340', '#3f7d78', '#8a5a9e', '#b06a35', '#3f6ba8', '#a8496a', '#7a7f45', '#4a7f4f'];
 
@@ -3097,6 +3099,17 @@ function seed() {
   if (uvu && !uvu.daily) uvu.daily = 20;
   if (uvu) uvu.ordered = true;
 
+  let venture = state.decks.find((d) => d.id === VENTURE_DECK);
+  if (!venture && !removed.has(VENTURE_DECK)) {
+    venture = { id: VENTURE_DECK, name: 'Venture, Capital & How Money Moves', color: DECK_COLORS[4], kind: 'curriculum', created: new Date().toISOString() };
+    state.decks.push(venture);
+  }
+  /* The phases build on each other — the language before the mechanics, the
+     mechanics before the firms — so it is studied in order rather than shuffled
+     across the whole deck. */
+  if (venture && !venture.daily) venture.daily = 20;
+  if (venture) venture.ordered = true;
+
   /* The separate leaders deck is retired: its questions are asked on the globe
      alongside the country they belong to. Cards that were studied keep their
      progress — they move into the countries deck rather than being dropped. */
@@ -3138,7 +3151,7 @@ function seed() {
       mathHave.add(key);
     });
 
-    for (const [deckId, list] of [[WORLD_DECK, [...COUNTRY_CARDS, ...LEADER_ONE]], [UVU_DECK, UVU_CARDS]]) {
+    for (const [deckId, list] of [[WORLD_DECK, [...COUNTRY_CARDS, ...LEADER_ONE]], [UVU_DECK, UVU_CARDS], [VENTURE_DECK, VENTURE_CARDS]]) {
       if (removed.has(deckId)) continue;
       const seen = existingFronts(deckId);
       [...list].reverse().forEach((c, revIdx) => {

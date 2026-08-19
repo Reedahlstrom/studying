@@ -263,6 +263,7 @@ describe('Content');
     'Mental Math': (await import('../math.js')).MATH_CARDS,
     'Countries': (await import('../countries.js')).COUNTRY_CARDS,
     'UVU Tour Guide': (await import('../uvu.js')).UVU_CARDS,
+    'Venture': (await import('../venture.js')).VENTURE_CARDS,
   };
   for (const [name, cards] of Object.entries(decks)) {
     check(`${name}: has cards`, cards.length > 0);
@@ -285,6 +286,23 @@ describe('Content');
     return order.every((v, i) => i === 0 || v >= order[i - 1]);
   })());
 
+  /* The venture deck is designed to be studied in phase order, and every card
+     must sit in a phase that exists — a typo in a category would silently
+     scatter cards through the deck. */
+  const vc = await import('../venture.js');
+  eq('venture: the language comes first', vc.PHASES[0].name, 'The Language');
+  eq('venture: every card sits in a real phase',
+    [...new Set(vc.VENTURE_CARDS.map((c) => c.category).filter((n) => !vc.PHASES.some((p) => p.name === n)))], []);
+  check('venture: cards follow phase order', (() => {
+    const order = vc.VENTURE_CARDS.map((c) => vc.PHASES.findIndex((p) => p.name === c.category));
+    return order.every((v, i) => i === 0 || v >= order[i - 1]);
+  })());
+  check('venture: every phase has real weight', vc.PHASES.every((p) => vc.VENTURE_CARDS.filter((c) => c.category === p.name).length >= 25),
+    vc.PHASES.map((p) => `${p.name}:${vc.VENTURE_CARDS.filter((c) => c.category === p.name).length}`).join(' '));
+  check('venture: no answer is a wall of text', vc.VENTURE_CARDS.every((c) => c.back.length <= 340));
+  check('venture: it is the size it was approved at', vc.VENTURE_CARDS.length >= 580 && vc.VENTURE_CARDS.length <= 650,
+    String(vc.VENTURE_CARDS.length));
+  /* the worked-number cards are the ones most likely to be quietly wrong */
   const maths = decks['Mental Math'];
   const arithmetic = maths.filter((c) => /^\d+\s*[+×*\-]\s*\d+$/.test(c.front.trim()));
   const wrong = arithmetic.filter((c) => {
