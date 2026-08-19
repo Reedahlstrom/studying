@@ -23,7 +23,6 @@ const LEADER_ONE = (() => {
     front: `Who leads ${META[code] ? META[code].n : code}?`,
   }));
 })();
-import { KNOWLEDGE_CARDS } from './knowledge.js';
 import { UVU_CARDS } from './uvu.js';
 import * as SYNC from './sync.js';
 import { Globe, META, CENTRE } from './globe.js';
@@ -3098,14 +3097,6 @@ function seed() {
   if (uvu && !uvu.daily) uvu.daily = 20;
   if (uvu) uvu.ordered = true;
 
-  let know = state.decks.find((d) => d.id === KNOWLEDGE_DECK);
-  if (!know && !removed.has(KNOWLEDGE_DECK)) {
-    know = { id: KNOWLEDGE_DECK, name: 'Core Human Knowledge', color: DECK_COLORS[1], kind: 'plain', created: new Date().toISOString() };
-    state.decks.push(know);
-  }
-  if (know && !know.daily) know.daily = 20;
-  know && (know.ordered = true);                 // the phases are a designed order
-
   /* The separate leaders deck is retired: its questions are asked on the globe
      alongside the country they belong to. Cards that were studied keep their
      progress — they move into the countries deck rather than being dropped. */
@@ -3125,6 +3116,19 @@ function seed() {
     state.removed = [...new Set([...(state.removed || []), LEADERS_DECK])];
   }
 
+  /* Core Human Knowledge is retired at Reed's request — a deck you are not
+     glad to see is a deck you will not do, and a deck you will not do makes
+     every other deck feel like a chore. Recorded in `removed` so it does not
+     come back on the next load, and so the decision reaches the other device
+     rather than being undone by it. */
+  if (!state.removed.includes(KNOWLEDGE_DECK)) {
+    state.cards = state.cards.filter((c) => c.deckId !== KNOWLEDGE_DECK);
+    state.decks = state.decks.filter((d) => d.id !== KNOWLEDGE_DECK);
+    state.habits = (state.habits || []).filter((h) => h.deckId !== KNOWLEDGE_DECK);
+    state.passages = (state.passages || []).filter((p) => p.deckId !== KNOWLEDGE_DECK);
+    state.removed = [...new Set([...state.removed, KNOWLEDGE_DECK])];
+  }
+
   if (state.seedVersion < SEED_VERSION) {
     const mathHave = existingFronts(MATH_DECK);
     [...MATH_CARDS].reverse().forEach((c, revIdx) => {
@@ -3134,7 +3138,7 @@ function seed() {
       mathHave.add(key);
     });
 
-    for (const [deckId, list] of [[WORLD_DECK, [...COUNTRY_CARDS, ...LEADER_ONE]], [KNOWLEDGE_DECK, KNOWLEDGE_CARDS], [UVU_DECK, UVU_CARDS]]) {
+    for (const [deckId, list] of [[WORLD_DECK, [...COUNTRY_CARDS, ...LEADER_ONE]], [UVU_DECK, UVU_CARDS]]) {
       if (removed.has(deckId)) continue;
       const seen = existingFronts(deckId);
       [...list].reverse().forEach((c, revIdx) => {

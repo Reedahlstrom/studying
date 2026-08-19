@@ -262,7 +262,6 @@ describe('Content');
     'Business & Economics': (await import('../curriculum.js')).CURRICULUM_CARDS,
     'Mental Math': (await import('../math.js')).MATH_CARDS,
     'Countries': (await import('../countries.js')).COUNTRY_CARDS,
-    'Core Human Knowledge': (await import('../knowledge.js')).KNOWLEDGE_CARDS,
     'UVU Tour Guide': (await import('../uvu.js')).UVU_CARDS,
   };
   for (const [name, cards] of Object.entries(decks)) {
@@ -285,11 +284,6 @@ describe('Content');
     const order = curric.CURRICULUM_CARDS.map((c) => curric.PHASES.findIndex((p) => p.name === c.category));
     return order.every((v, i) => i === 0 || v >= order[i - 1]);
   })());
-
-  const know = await import('../knowledge.js');
-  eq('knowledge: how to think comes first', know.PHASES[0].name, 'How to Know Things');
-  eq('knowledge: every principle sits in a real phase',
-    know.PRINCIPLES.filter((p) => !know.PHASES.some((x) => x.id === p.phase)).map((p) => p.id), []);
 
   const maths = decks['Mental Math'];
   const arithmetic = maths.filter((c) => /^\d+\s*[+×*\-]\s*\d+$/.test(c.front.trim()));
