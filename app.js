@@ -3674,6 +3674,9 @@ let syncing = false;
 let remoteVersion = null;      // the stamp the gist carried when we last looked
 let retryTimer = null;
 let retryAttempt = 0;
+/* GitHub has said no to this key. Stops the automatic attempts without
+   throwing the key away — see the catch in runSync. */
+let credentialRejected = false;
 let firstPull = null;          // resolves once this device has caught up
 let lastGood = 0;              // when a sync last actually worked
 
@@ -3689,6 +3692,10 @@ function syncState(text, kind) {
 async function runSync({ quiet = false, pushOnly = false } = {}) {
   const cfg = SYNC.syncConfig(state.settings);
   if (!cfg.on || syncing) return;
+  /* A key GitHub has already refused is not worth asking about every minute.
+     Anything you do on purpose still gets a fresh try. */
+  if (credentialRejected && quiet) return;
+  credentialRejected = false;
   const canMerge = !session && !gsession && !pushOnly;
   syncing = true;
   if (!quiet) syncState('Syncing…');
@@ -3742,25 +3749,29 @@ async function runSync({ quiet = false, pushOnly = false } = {}) {
 
     state.settings.syncedAt = new Date().toISOString();
     lastGood = Date.now();
+    credentialRejected = false;
     retryAttempt = 0;
     clearTimeout(retryTimer);
     writeNow({ silent: true });
     syncState('Synced just now', 'ok');
     syncHealth();
   } catch (e) {
-    /* A refused token is not a bad moment, it is a dead credential — revoked
-       on GitHub, or never given the scope. Keeping it means failing the same
-       way on every load for ever, with no hint that the fix is to replace it.
-       Deleting a token on GitHub does not reach into this device, so the app
-       has to notice on its own. */
-    if (e.status === 401) {
-      state.settings.syncToken = '';
-      state.settings.syncGist = '';
-      writeNow({ silent: true });
-      const field = $('#syncToken');
-      if (field) field.value = '';
-      syncState('That token no longer works — cleared. Paste a new one.', 'bad');
-      toast('Your sync token was refused, so it has been cleared. Paste a new one.', 'bad');
+    /* GitHub refusing the key is not permission to throw it away.
+
+       This used to delete it, on the reasoning that a dead credential should
+       not sit there failing for ever. The effect was that a single refusal —
+       an outage, a hiccup, a format this code has not heard of — wiped the
+       setup and sent you back through the whole procedure. Setting up again is
+       far more expensive than a failed request, so the key stays. What stops
+       is the automatic retrying, so a genuinely dead key is not hammered every
+       minute; opening the app again, or pressing Sync now, tries afresh. */
+    if (e.status === 401 || e.status === 403) {
+      credentialRejected = true;
+      const why = e.status === 403
+        ? 'GitHub refused this key — a classic token with the "gist" scope is the one that works.'
+        : 'GitHub refused this key. It may have been revoked. Replace it below, or press Sync now to try again.';
+      syncState(why, 'bad');
+      if (!quiet) toast(why, 'bad');
     } else {
       syncState(e.message || 'Sync failed', 'bad');
       if (!quiet) toast(e.message || 'Sync failed.', 'bad');
@@ -4007,9 +4018,17 @@ function setupSync() {
       syncState('Not connected — this device only');
       return;
     }
-    /* Say it before spending a round trip on a token that cannot work. */
+    /* Say it before spending a round trip on a key that cannot work — but
+       keep what was typed, so it can be looked at and corrected rather than
+       vanishing the moment it is wrong. */
     const problem = tokenProblem(token);
-    if (problem) { syncState(problem, 'bad'); return; }
+    if (problem) {
+      syncState(problem + ' It has been kept, so you can correct it.', 'bad');
+      state.settings.syncToken = token;
+      writeNow();
+      credentialRejected = true;
+      return;
+    }
     state.settings.syncToken = token;
     state.settings.syncGist = '';
     state.settings.soloOk = false;
@@ -4052,13 +4071,16 @@ function setupSync() {
     $('#syncToken').value = state.settings.syncToken;
     firstPull = runSync();
   } else {
+    /* Something is stored that does not look like a key. Say what is wrong
+       with it and leave it alone: this check knows the token formats that
+       existed when it was written, and GitHub has changed them before. A
+       pattern from today is not a good enough reason to delete something that
+       might be working tomorrow — it is only a good enough reason not to
+       spend a request on it, and to say so. */
     const stored = tokenProblem(cfg.token);
     if (stored) {
-      state.settings.syncToken = '';
-      state.settings.syncGist = '';
-      writeNow({ silent: true });
-      $('#syncToken').value = '';
       syncState(stored, 'bad');
+      credentialRejected = true;
     } else if (cfg.on) {
       firstPull = runSync({ quiet: true });
     }

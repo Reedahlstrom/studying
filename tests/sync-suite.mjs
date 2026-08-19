@@ -213,4 +213,44 @@ describe('Reporting the truth');
   }
 }
 
+/* ═══════════ a refusal must not cost you the setup ═══════════
+   This used to delete the key whenever GitHub said no, so one bad moment sent
+   you back through the whole procedure. Setting up again costs far more than
+   a failed request. */
+describe('Keeping the key');
+{
+  /* the app's rule, lifted into something testable */
+  const handle = (status, settings) => {
+    const s = { ...settings };
+    let rejected = false;
+    let message = '';
+    if (status === 401 || status === 403) {
+      rejected = true;
+      message = status === 403
+        ? 'GitHub refused this key — a classic token with the "gist" scope is the one that works.'
+        : 'GitHub refused this key. It may have been revoked.';
+    }
+    return { settings: s, rejected, message };
+  };
+
+  for (const status of [401, 403]) {
+    const r = handle(status, { syncToken: 'ghp_still_here', syncGist: 'abc' });
+    eq(`a ${status} does not delete the key`, r.settings.syncToken, 'ghp_still_here');
+    eq(`nor the file it was using (${status})`, r.settings.syncGist, 'abc');
+    check(`a ${status} is explained`, r.message.length > 20, r.message);
+    check(`and stops the automatic retrying (${status})`, r.rejected);
+  }
+
+  /* automatic attempts stand down; deliberate ones still go */
+  const shouldRun = (rejected, quiet) => !(rejected && quiet);
+  check('a rejected key is not retried on the heartbeat', !shouldRun(true, true));
+  check('but pressing Sync now still tries', shouldRun(true, false));
+  check('and a key that has not been refused syncs normally', shouldRun(false, true));
+
+  /* a transient failure must heal itself without anyone doing anything */
+  const network = handle(0, { syncToken: 'ghp_still_here' });
+  check('a network failure is not treated as a bad key', !network.rejected);
+  eq('and certainly does not delete it', network.settings.syncToken, 'ghp_still_here');
+}
+
 process.exit(report('Sync') ? 1 : 0);
